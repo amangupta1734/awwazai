@@ -5,3 +5,4 @@ openai
 requests
 reportlab
 pydantic
+python-multipart
