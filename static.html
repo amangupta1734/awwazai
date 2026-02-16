@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Awwazai - AI Transcription & Summarization</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+body { font-family: 'Inter', sans-serif; }
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: #111827; }
+::-webkit-scrollbar-thumb { background: #374151; border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: #4B5563; }
+.nav-link.active { background-color: #4f46e5; color: #ffffff; }
+.transcript-box { height: 300px; overflow-y: auto; white-space: pre-wrap; word-wrap: break-word; line-height: 1.6; }
+.text-speaker-1 { color: #818CF8; }
+.text-speaker-2 { color: #A7F3D0; }
+.text-speaker-3 { color: #FCD34D; }
+</style>
+</head>
+<body class="bg-gray-900 text-gray-200">
+
+<div class="flex h-screen">
+    <aside class="w-64 bg-gray-800 p-6 flex flex-col justify-between">
+        <div>
+            <h1 class="text-2xl font-bold text-white mb-6">Awwazai</h1>
+            <nav class="space-y-3">
+                <a href="#" class="nav-link active" data-target="dashboard-view">Dashboard</a>
+                <a href="#" class="nav-link" data-target="new-transcript-view">New Transcript</a>
+            </nav>
+        </div>
+        <div class="mt-auto">
+            <p class="text-white font-medium">Ananya Sharma</p>
+            <p class="text-gray-400 text-xs">Final Year Project</p>
+        </div>
+    </aside>
+
+    <main class="flex-1 p-8 overflow-y-auto">
+        <div id="dashboard-view">
+            <h2 class="text-3xl font-bold mb-4">Dashboard</h2>
+            <table class="w-full text-left border-collapse border border-gray-700">
+                <thead>
+                    <tr class="border-b border-gray-700">
+                        <th class="p-2">Title</th>
+                        <th class="p-2">Date</th>
+                        <th class="p-2">Duration</th>
+                        <th class="p-2">Status</th>
+                    </tr>
+                </thead>
+                <tbody id="recent-transcripts-body">
+                    <tr><td colspan="4" class="text-center p-4 text-gray-400">Loading meeting history...</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div id="new-transcript-view" class="hidden">
+            <h2 class="text-3xl font-bold mb-2">Live Meeting Transcription</h2>
+            <button id="mic-toggle-btn" class="bg-indigo-600 px-4 py-2 rounded text-white font-bold">Start Real-Time Transcription</button>
+            <span id="status-indicator" class="ml-4 text-gray-400">Ready</span>
+
+            <div id="transcript-output" class="transcript-box bg-gray-900 p-4 rounded-lg mt-4 border border-gray-700">
+                Press Start to capture audio...
+            </div>
+
+            <h3 class="text-xl font-semibold mt-6">AI Insights</h3>
+            <div id="summary-text" class="text-gray-400 italic">Summary will appear after recording stops.</div>
+            <div id="action-items-list" class="mt-2"></div>
+        </div>
+    </main>
+</div>
+
+<script>
+const API_KEY = "bcb08274766143da995973ccb1c30af8";
+const WEBSOCKET_URL = `ws://localhost:8000/ws/audio?api_key=${API_KEY}`;
+const API_BASE_URL = "http://localhost:8000";
+
+let socket, isRecording=false, mediaRecorder, audioStream;
+let currentMeetingId=null;
+
+const navLinks=document.querySelectorAll('.nav-link');
+const views=document.querySelectorAll('main > div');
+const recentTranscriptsBody=document.getElementById('recent-transcripts-body');
+const btn=document.getElementById('mic-toggle-btn');
+const statusIndicator=document.getElementById('status-indicator');
+const transcriptOutput=document.getElementById('transcript-output');
+const summaryText=document.getElementById('summary-text');
+const actionItemsList=document.getElementById('action-items-list');
+
+function switchView(targetId){
+    views.forEach(v=>v.id===targetId?v.classList.remove('hidden'):v.classList.add('hidden'));
+    navLinks.forEach(l=>l.dataset.target===targetId?l.classList.add('active'):l.classList.remove('active'));
+}
+navLinks.forEach(link=>link.addEventListener('click',()=>switchView(link.dataset.target)));
+
+async function fetchRecentTranscripts(){
+    const resp = await fetch(`${API_BASE_URL}/meetings`);
+    const data = await resp.json();
+    recentTranscriptsBody.innerHTML='';
+    if(data.length===0){recentTranscriptsBody.innerHTML='<tr><td colspan="4" class="text-center text-gray-400 p-4">No meetings found.</td></tr>';}
+    else{
+        data.reverse().forEach(meeting=>{
+            const row=document.createElement('tr');
+            row.className='border-b border-gray-700 hover:bg-gray-700';
+            row.innerHTML=`<td class="p-2">${meeting.title}</td><td class="p-2">${meeting.start_time}</td><td class="p-2">${meeting.duration_seconds}s</td><td class="p-2">${meeting.status}</td>`;
+            recentTranscriptsBody.appendChild(row);
+        });
+    }
+}
+fetchRecentTranscripts();
+
+async function toggleMicrophone(){
+    if(!isRecording){
+        btn.disabled=true;
+        audioStream=await navigator.mediaDevices.getUserMedia({audio:true});
+        mediaRecorder=new MediaRecorder(audioStream,{mimeType:'audio/webm'});
+        socket=new WebSocket(WEBSOCKET_URL);
+        socket.binaryType='arraybuffer';
+
+        socket.onopen=()=>{statusIndicator.textContent='Recording...';mediaRecorder.start(1000);}
+        socket.onmessage=(event)=>{
+            const data=JSON.parse(event.data);
+            if(data.type==='INIT'){currentMeetingId=data.meetingId;}
+            if(data.type==='TRANSCRIPT_UPDATE'){transcriptOutput.textContent+=data.text+'\n';transcriptOutput.scrollTop=transcriptOutput.scrollHeight;}
+            if(data.type==='TRANSCRIPT_FINALIZED'){transcriptOutput.textContent=data.fullTranscript;}
+            if(data.type==='SUMMARY_COMPLETED'){
+                summaryText.textContent=data.summaryData.summary;
+                actionItemsList.innerHTML='';
+                data.summaryData.action_items.forEach(ai=>{const div=document.createElement('div');div.textContent=`- ${ai.item} (Assigned: ${ai.assigned_to})`;actionItemsList.appendChild(div);});
+            }
+        }
+
+        mediaRecorder.ondataavailable=e=>{
+            if(e.data.size>0 && socket.readyState===WebSocket.OPEN){e.data.arrayBuffer().then(buf=>socket.send(buf));}
+        }
+        mediaRecorder.onstop=()=>{
+            audioStream.getTracks().forEach(track=>track.stop());
+            btn.textContent='Start Real-Time Transcription';
+            btn.disabled=false;
+            statusIndicator.textContent='Ready';
+            fetchRecentTranscripts();
+        }
+
+        btn.textContent='Stop & Summarize Meeting';
+        isRecording=true;
+
+    } else {
+        mediaRecorder.stop();
+        socket.close();
+        isRecording=false;
+    }
+}
+
+btn.addEventListener('click', toggleMicrophone);
+</script>
+</body>
+</html>

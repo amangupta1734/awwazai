@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Awwazai - AI Transcription & Summarization</title>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #111827; }
+        ::-webkit-scrollbar-thumb { background: #374151; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #4B5563; }
+        .nav-link.active { background-color: #4f46e5; color: #ffffff; }
+        .transcript-box { height: 300px; overflow-y: auto; white-space: pre-wrap; word-wrap: break-word; line-height: 1.6; }
+        .text-speaker-1 { color: #818CF8; }
+        .text-speaker-2 { color: #A7F3D0; }
+        .text-speaker-3 { color: #FCD34D; }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-200">
+
+<div class="flex h-screen">
+    <aside class="w-64 flex-shrink-0 bg-gray-800 p-6 flex flex-col justify-between">
+        <div>
+            <div class="flex items-center mb-10">
+                <svg class="w-8 h-8 mr-3 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path>
+                </svg>
+                <h1 class="text-2xl font-bold text-white">Awwazai</h1>
+            </div>
+            <nav class="space-y-3">
+                <a href="#" class="nav-link active flex items-center py-3 px-4 rounded-lg hover:bg-gray-700" data-target="dashboard-view">
+                    <svg class="w-6 h-6 mr-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path>
+                    </svg>
+                    <span>Dashboard</span>
+                </a>
+                <a href="#" class="nav-link flex items-center py-3 px-4 rounded-lg hover:bg-gray-700" data-target="new-transcript-view">
+                    <svg class="w-6 h-6 mr-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                    </svg>
+                    <span>New Transcript</span>
+                </a>
+            </nav>
+        </div>
+        <div class="mt-auto border-t border-gray-700 pt-4 flex items-center group">
+            <img class="h-10 w-10 rounded-full object-cover" src="https://placehold.co/100x100/7c3aed/ffffff?text=User" alt="User Avatar">
+            <div class="ml-3">
+                <p class="text-sm font-medium text-white">Aman </p>
+                <p class="text-xs font-medium text-gray-400 group-hover:text-gray-300">Final Year Project</p>
+            </div>
+        </div>
+    </aside>
+
+    <main class="flex-1 p-8 overflow-y-auto">
+        <div id="dashboard-view">
+            <h2 class="text-3xl font-bold mb-8">Dashboard</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                   <div class="bg-gray-800 p-6 rounded-xl flex items-center">
+                    <div class="bg-indigo-600 p-3 rounded-lg mr-4">
+                       <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"></path></svg>
+                    </div>
+                    <div><p class="text-sm text-gray-400">Total Meetings</p><p class="text-2xl font-bold" id="total-meetings">--</p></div>
+                </div>
+                <div class="bg-gray-800 p-6 rounded-xl flex items-center">
+                    <div class="bg-green-600 p-3 rounded-lg mr-4">
+                       <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    </div>
+                    <div><p class="text-sm text-gray-400">Total Duration</p><p class="text-2xl font-bold" id="total-duration">--</p></div>
+                </div>
+                <div class="bg-gray-800 p-6 rounded-xl flex items-center">
+                    <div class="bg-yellow-500 p-3 rounded-lg mr-4">
+                       <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                    </div>
+                    <div><p class="text-sm text-gray-400">Meetings This Week</p><p class="text-2xl font-bold" id="this-week">--</p></div>
+                </div>
+                <div class="bg-gray-800 p-6 rounded-xl flex items-center">
+                    <div class="bg-red-500 p-3 rounded-lg mr-4">
+                        <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    </div>
+                    <div><p class="text-sm text-gray-400">Completed</p><p class="text-2xl font-bold" id="completed">--</p></div>
+                </div>
+            </div>
+
+            <div>
+                <h3 class="text-xl font-bold mb-4">Meeting History</h3>
+                <div class="bg-gray-800 rounded-xl overflow-hidden shadow-lg">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left">
+                            <thead class="border-b border-gray-700">
+                                <tr>
+                                    <th class="p-4 font-semibold">Title</th>
+                                    <th class="p-4 font-semibold">Date</th>
+                                    <th class="p-4 font-semibold">Duration</th>
+                                    <th class="p-4 font-semibold">Status</th>
+                                    <th class="p-4 font-semibold">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="recent-transcripts-body">
+                                <tr class="text-gray-400"><td colspan="5" class="p-4 text-center">Loading meeting history...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="detail-modal-container" class="fixed inset-0 bg-gray-900 bg-opacity-75 z-50 hidden items-center justify-center p-4">
+                <div id="detail-modal" class="bg-gray-800 w-full max-w-4xl max-h-[90vh] overflow-y-auto p-6 rounded-xl shadow-2xl relative">
+                    <button onclick="hideModal()" class="absolute top-4 right-4 text-gray-400 hover:text-white transition">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
+                    <h3 id="modal-title" class="text-2xl font-bold text-indigo-400 mb-4">Meeting Details</h3>
+                    <div class="flex gap-3 mb-4">
+    <button id="download-transcript-btn"
+        class="px-4 py-2 text-sm bg-gray-700 hover:bg-gray-600 rounded-lg">
+        📄 Download Transcript
+    </button>
+    <button id="export-pdf-btn"
+        class="px-4 py-2 text-sm bg-indigo-600 hover:bg-indigo-700 rounded-lg text-white">
+        📥 Export Summary (PDF)
+    </button>
+</div>
+
+                    <div class="space-y-6">
+                        <div class="bg-gray-700 p-4 rounded-lg">
+                            <div class="flex gap-2 mb-3">
+    <select id="translate-lang" class="bg-gray-700 text-sm rounded px-2 py-1">
+        <option value="en">English</option>
+        <option value="hi">Hindi</option>
+        <option value="mr">Marathi</option>
+        <option value="es">Spanish</option>
+        <option value="fr">French</option>
+    </select>
+    <button id="translate-btn"
+        class="px-3 py-1 text-sm bg-indigo-600 hover:bg-indigo-700 rounded text-white">
+        Translate Summary
+    </button>
+</div>
+
+                            <h4 class="text-xl font-semibold mb-2">AI Summary</h4>
+                            <p id="modal-summary" class="text-gray-300 italic"></p>
+                        </div>
+
+                        <div class="bg-gray-700 p-4 rounded-lg">
+                            <h4 class="text-xl font-semibold mb-2">Action Items</h4>
+                            <div id="modal-actions" class="text-gray-300 space-y-2"></div>
+                        </div>
+
+                        <div class="bg-gray-700 p-4 rounded-lg">
+                            <h4 class="text-xl font-semibold mb-2">Full Transcript</h4>
+                            <div class="flex gap-2 mb-2">
+    <select id="translate-transcript-lang"
+            class="bg-gray-700 text-sm rounded px-2 py-1">
+        <option value="en">English</option>
+        <option value="hi">Hindi</option>
+        <option value="mr">Marathi</option>
+        <option value="es">Spanish</option>
+        <option value="fr">French</option>
+    </select>
+
+    <button id="translate-transcript-btn"
+            class="px-3 py-1 text-sm bg-indigo-600 hover:bg-indigo-700 rounded text-white">
+        Translate Transcript
+    </button>
+</div>
+                            <div id="modal-transcript" class="transcript-box max-h-[400px] text-gray-300 text-sm p-2 rounded"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+
+        <div id="new-transcript-view" class="hidden">
+            <h2 class="text-3xl font-bold mb-2">Live Meeting Transcription</h2>
+            <p class="text-gray-400 mb-8">Click the microphone to start real-time transcription.</p>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <div class="lg:col-span-2 space-y-6">
+                    <div class="bg-gray-800 p-6 rounded-xl shadow-lg border border-gray-700">
+                        <div class="flex justify-between items-center">
+                            <h3 class="text-2xl font-bold text-white">Start New Session</h3>
+                            <span id="status-indicator" class="text-xs px-3 py-1 rounded-full font-medium bg-gray-700 text-gray-300">Ready</span>
+                        </div>
+                        <div class="bg-gray-800 p-6 rounded-xl shadow-lg border border-gray-700">
+    <h3 class="text-xl font-bold text-white mb-3">Upload Audio / Video</h3>
+
+    <input type="file" id="upload-input"
+           accept="audio/*,video/*"
+           class="block w-full text-sm text-gray-300
+                  file:mr-4 file:py-2 file:px-4
+                  file:rounded file:border-0
+                  file:text-sm file:font-semibold
+                  file:bg-indigo-600 file:text-white
+                  hover:file:bg-indigo-700"/>
+
+    <button type="button"
+        onclick="uploadFile()"
+        class="w-full mt-4 py-2 px-4 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg">
+    Upload & Summarize
+</button>
+
+
+    <p id="upload-status" class="mt-2 text-xs text-gray-400"></p>
+</div>
+
+                        <button id="mic-toggle-btn" class="w-full mt-4 py-3 px-6 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg" onclick="toggleMicrophone()">
+                            Start Real-Time Transcription
+                        </button>
+                        <p id="meeting-details" class="mt-4 text-xs text-gray-500 truncate">Current Meeting ID: N/A</p>
+                    </div>
+                    <div class="bg-gray-800 p-6 rounded-xl border border-gray-700 shadow-lg">
+                        <h2 class="text-xl font-semibold text-white mb-4">Live Transcription Feed</h2>
+                        <div id="transcript-output" class="transcript-box bg-gray-900 p-4 rounded-lg text-gray-400 text-sm border border-gray-700 shadow-inner">
+                            <p class="text-gray-600">Press Start to capture audio...</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="lg:col-span-1 space-y-6">
+                    <div class="bg-gray-800 p-6 rounded-xl shadow-lg border border-gray-700">
+                        <h3 class="text-xl font-semibold text-white mb-3 flex items-center">AI Insights</h3>
+                        <div id="summary-area" class="text-sm text-gray-300">
+                            <p id="summary-text" class="italic text-gray-500">Summary will appear after recording stops.</p>
+                            <div id="action-items-list" class="mt-4 space-y-2"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+</div>
+
+<script>
+// --- CONFIGURATION ---
+// Use absolute paths to 127.0.0.1 (localhost)
+const WEBSOCKET_URL = `ws://127.0.0.1:8000/ws/audio`;
+const API_BASE_URL = window.location.origin;
+
+// --- GLOBAL STATE ---
+let socket, isRecording=false, mediaRecorder, audioStream;
+let currentMeetingId=null;
+let allMeetings = []; // Store all meetings for the modal
+let speakerMap = {};
+let speakerCount = 0;
+let originalSummary = "";
+let originalTranscript = "";
+
+
+
+// --- DOM ELEMENTS ---
+const navLinks=document.querySelectorAll('.nav-link');
+const views = document.querySelectorAll('#dashboard-view, #new-transcript-view');
+const recentTranscriptsBody=document.getElementById('recent-transcripts-body');
+const btn=document.getElementById('mic-toggle-btn');
+const statusIndicator=document.getElementById('status-indicator');
+const transcriptOutput=document.getElementById('transcript-output');
+const summaryText=document.getElementById('summary-text');
+const actionItemsList=document.getElementById('action-items-list');
+const meetingDetails=document.getElementById('meeting-details');
+// Modal Elements
+const detailModalContainer = document.getElementById('detail-modal-container');
+const modalTitle = document.getElementById('modal-title');
+const modalSummary = document.getElementById('modal-summary');
+const modalActions = document.getElementById('modal-actions');
+const modalTranscript = document.getElementById('modal-transcript');
+const downloadTranscriptBtn = document.getElementById('download-transcript-btn');
+const exportPdfBtn = document.getElementById('export-pdf-btn');
+
+// --- UI FUNCTIONS ---
+function updateStatus(text,colorClass){statusIndicator.textContent=text;statusIndicator.className=`text-xs px-3 py-1 rounded-full font-medium ${colorClass}`;}
+function updateButton(isRec){if(isRec){btn.textContent='Stop & Summarize Meeting';btn.classList.replace('bg-indigo-600','bg-red-600');btn.classList.replace('hover:bg-indigo-700','hover:bg-red-700');}else{btn.textContent='Start Real-Time Transcription';btn.classList.replace('bg-red-600','bg-indigo-600');btn.classList.replace('hover:bg-red-700','hover:bg-indigo-700');}btn.disabled=false;}
+function clearSummary(){summaryText.textContent='Summary will be generated once the recording stops and the full transcript is available.';summaryText.classList.add('italic','text-gray-500');actionItemsList.innerHTML='';}
+
+function getSpeakerClass(speaker) {
+    // This function creates a simple color rotation for speakers
+    if (!speaker) speaker = "SPEAKER"; // Handle partials without speaker
+    if (!speakerMap[speaker]) {
+        speakerCount++;
+        const colorIndex = (speakerCount % 3) + 1;
+        speakerMap[speaker] = `text-speaker-${colorIndex}`;
+    }
+    return speakerMap[speaker];
+}
+
+function appendTranscript(text) {
+    // Regex to parse labels like (EN): or (HI):
+    const match = text.match(/\((.*?)\):\s(.*)/i);
+    let displayHtml;
+
+    if (match) {
+        const type = match[1];
+        const spokenText = match[2];
+        const speakerClass = getSpeakerClass(type);
+        
+        displayHtml = `<div class="mt-2 text-gray-300">
+                            <span class="font-bold ${speakerClass}">${type}:</span> 
+                            <span class="text-gray-400">${spokenText}</span>
+                        </div>`;
+    } else {
+        // Fallback for other messages (like errors)
+        displayHtml = `<div class="mt-2 text-red-400 font-semibold">${text}</div>`;
+    }
+
+    transcriptOutput.innerHTML += displayHtml;
+    transcriptOutput.scrollTop = transcriptOutput.scrollHeight;
+}
+
+
+// --- VIEW SWITCHING ---
+function switchView(targetId){
+    views.forEach(v=>v.id===targetId?v.classList.remove('hidden'):v.classList.add('hidden'));
+    navLinks.forEach(l=>l.dataset.target===targetId?l.classList.add('active'):l.classList.remove('active'));
+    if (targetId === 'dashboard-view') {
+        loadMeetingHistory();
+    }
+}
+navLinks.forEach(link=>link.addEventListener('click', (e) => {
+    e.preventDefault();
+    switchView(link.dataset.target);
+}));
+
+// --- DATA FETCHING ---
+function formatDuration(seconds) {
+    if (seconds === undefined || seconds === null) return 'N/A';
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes}m ${remainingSeconds}s`;
+}
+
+async function loadMeetingHistory(){
+    try{
+        // Use the full, absolute path for the fetch request
+        const resp = await fetch(`${API_BASE_URL}/meetings`);
+        if (!resp.ok) {
+            throw new Error(`HTTP error! status: ${resp.status}`);
+        }
+        allMeetings = await resp.json(); // Store meetings globally
+        
+        recentTranscriptsBody.innerHTML='';
+        let totalDuration = 0;
+        let completedCount = 0;
+        let weekCount = 0;
+        const oneWeekAgo = new Date();
+        oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+
+        if(allMeetings.length === 0){
+            recentTranscriptsBody.innerHTML='<tr class="text-gray-400"><td colspan="5" class="p-4 text-center">No meetings found.</td></tr>';
+        } else {
+            // Sort by start time descending
+            allMeetings.sort((a, b) => new Date(b.start_time) - new Date(a.start_time));
+            
+            allMeetings.forEach(meeting=>{
+                const row=document.createElement('tr');
+                row.className='border-b border-gray-700 hover:bg-gray-700 cursor-pointer';
+                
+                const duration = formatDuration(meeting.duration_seconds);
+const statusClass =
+    meeting.status === 'COMPLETED' ? 'bg-green-500/20 text-green-300' :
+    meeting.status === 'TRANSCRIBING' ? 'bg-blue-500/20 text-blue-300' :
+    meeting.status === 'SUMMARIZING' ? 'bg-purple-500/20 text-purple-300' :
+    meeting.status === 'SUMMARY_PENDING' ? 'bg-yellow-500/20 text-yellow-300' :
+    'bg-gray-500/20 text-gray-300';
+                const meetingDate = new Date(meeting.start_time);
+
+               row.innerHTML = `
+    <td class="p-4 flex items-center gap-2">
+        <span class="font-medium">${meeting.title}</span>
+        <button
+            class="text-gray-400 hover:text-indigo-400"
+            title="Rename"
+            onclick="renameMeeting(event, ${meeting.meeting_id}, '${meeting.title.replace(/'/g, "\\'")}')">
+            ✏️
+        </button>
+    </td>
+    <td class="p-4">${meetingDate.toLocaleDateString()}</td>
+    <td class="p-4">${duration}</td>
+    <td class="p-4">
+        <span class="text-xs font-medium px-2 py-1 rounded-full ${statusClass}">
+            ${meeting.status}
+        </span>
+    </td>
+    <td class="p-4 flex items-center gap-3">
+        <button
+            class="text-indigo-400 hover:text-indigo-300 text-sm font-medium"
+            onclick="viewMeetingDetails(event, ${meeting.meeting_id})">
+            View
+        </button>
+
+        <button
+            class="text-red-400 hover:text-red-300"
+            title="Delete"
+            onclick="deleteMeeting(event, ${meeting.meeting_id})">
+            🗑️
+        </button>
+    </td>
+`;
+
+
+                recentTranscriptsBody.appendChild(row);
+
+                // Update stats
+                if (meeting.duration_seconds) {
+                    totalDuration += meeting.duration_seconds;
+                }
+                if (meeting.status === 'COMPLETED') {
+                    completedCount++;
+                }
+                if (meetingDate > oneWeekAgo) {
+                    weekCount++;
+                }
+            });
+        }
+        // Update dashboard cards
+        document.getElementById('total-meetings').textContent = allMeetings.length;
+        document.getElementById('total-duration').textContent = formatDuration(totalDuration);
+        document.getElementById('this-week').textContent = weekCount;
+        document.getElementById('completed').textContent = completedCount;
+
+    } catch(err){
+        console.error("Failed to load meeting history:", err);
+        recentTranscriptsBody.innerHTML = '<tr class="text-red-400"><td colspan="5" class="p-4 text-center">Failed to load meeting history. Is the server running?</td></tr>';
+    }
+}
+// Initial load
+document.addEventListener('DOMContentLoaded', () => switchView('dashboard-view'));
+
+
+// --- WEBSOCKET & MICROPHONE LOGIC ---
+async function toggleMicrophone(){
+    if(!isRecording){
+        btn.disabled=true;
+        clearSummary();
+        transcriptOutput.innerHTML = '<p class="text-gray-600">Connecting to server...</p>';
+        speakerMap = {}; // Reset speaker colors
+        speakerCount = 0;
+
+        try {
+    audioStream = await navigator.mediaDevices.getDisplayMedia({
+        video: { frameRate: 1 },
+        audio: {
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false
+        }
+    });
+} catch (err) {
+    console.error('Error capturing tab/system audio:', err);
+    transcriptOutput.innerHTML = `
+        <p class="text-red-400">
+            Please select a <b>Chrome Tab</b> and enable <b>"Share tab audio"</b>.
+        </p>`;
+    btn.disabled = false;
+    return;
+}
+
+
+
+        // --- Original MediaRecorder line (no explicit codecs, relying on browser default) ---
+        mediaRecorder = new MediaRecorder(audioStream);
+        // If you need more control, a more advanced AudioContext + ScriptProcessorNode setup would be used here.
+
+        socket = new WebSocket(WEBSOCKET_URL);
+        socket.binaryType = 'arraybuffer';
+
+        socket.onopen = () => {
+            updateStatus('Recording...', 'bg-green-600 text-white');
+            transcriptOutput.innerHTML = '<p class="text-gray-600">Audio stream connected. Listening...</p>';
+            mediaRecorder.start(1000); // Send 1-second chunks
+        }
+        
+        socket.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            if(data.type==='INIT'){
+                currentMeetingId=data.meetingId;
+                meetingDetails.textContent=`Current Meeting ID: ${currentMeetingId}`;
+            }
+            if(data.type==='TRANSCRIPT_UPDATE'){
+                if (transcriptOutput.querySelector('.text-gray-600')) {
+                    transcriptOutput.innerHTML = ''; // Clear "Listening..." message
+                }
+                appendTranscript(data.text);
+            }
+            if(data.type==='TRANSCRIPT_FINALIZED'){
+                // This message type is no longer used, summary comes in real-time
+            }
+            if(data.type==='SUMMARY_COMPLETED'){
+                summaryText.textContent=data.summaryData.summary;
+                summaryText.classList.remove('italic','text-gray-500');
+                actionItemsList.innerHTML='';
+                if (data.summaryData.action_items && data.summaryData.action_items.length > 0) {
+                    data.summaryData.action_items.forEach(ai=>{
+                        const div = document.createElement('div');
+                        div.className = 'flex items-start text-sm bg-gray-700 p-3 rounded-md border border-indigo-500/50';
+                        div.innerHTML = `
+                            <span class="mr-3 mt-1 text-indigo-400 font-bold flex-shrink-0">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                            </span>
+                            <div>
+                                <p class="font-medium text-white">${ai.item}</p>
+                                <p class="text-xs text-gray-400">Assigned to: ${ai.assigned_to || "Team"}</p>
+
+                            </div>
+                        `;
+                        actionItemsList.appendChild(div);
+                    });
+                } else {
+                    actionItemsList.innerHTML = '<p class="text-gray-500 text-sm">No action items were identified.</p>';
+                }
+            }
+        }
+
+        socket.onclose = (event) => {
+            console.log("WebSocket disconnected:", event.reason);
+            updateStatus('Disconnected', 'bg-gray-700 text-gray-300');
+            if (isRecording) { // If it was an unexpected close
+                mediaRecorder.stop();
+            }
+        };
+
+        socket.onerror = (error) => {
+            console.error("WebSocket error:", error);
+            transcriptOutput.innerHTML = '<p class="text-red-400">Error connecting to WebSocket. Is the server running?</p>';
+            updateStatus('Error', 'bg-red-700 text-red-400');
+            if (isRecording) {
+                mediaRecorder.stop();
+            }
+        };
+
+        mediaRecorder.ondataavailable = e => {
+            if(e.data.size>0 && socket.readyState===WebSocket.OPEN){
+                e.data.arrayBuffer().then(buf => socket.send(buf));
+            }
+        }
+        
+        mediaRecorder.onstop = () => {
+    if (audioStream) {
+        audioStream.getTracks().forEach(track => track.stop());
+    }
+    updateButton(false);
+    updateStatus('Ready','bg-gray-700 text-gray-300');
+    loadMeetingHistory();
+}
+
+        
+        isRecording=true;
+        updateButton(true);
+
+    } else {
+    mediaRecorder.stop();
+    isRecording = false;
+}
+
+}
+
+// --- MODAL FUNCTIONS ---
+function viewMeetingDetails(event, meetingId) {
+    event.stopPropagation(); // Stop row click from firing
+    
+    const meeting = allMeetings.find(m => m.meeting_id === meetingId);
+    if (!meeting) {
+        // Simple alert for error, as this is a non-critical part of the demo
+        console.error("Could not find meeting details for ID:", meetingId);
+        return;
+    }
+    // Populate Modal
+    modalTitle.textContent = meeting.title;
+    
+    modalSummary.textContent = meeting.summary_text || 'Summary not available.';
+    originalSummary = modalSummary.textContent;
+
+    modalSummary.classList.toggle('italic', !meeting.summary_text);
+    
+    // Format the transcript for modal display
+    let formattedTranscript = '<p class="text-gray-500">Transcript not available.</p>';
+    if (meeting.full_transcript) {
+        formattedTranscript = meeting.full_transcript
+            .split('\n') // Split by newlines
+            .map(line => `<div>${line}</div>`) // Wrap each line in a div
+            .join('');
+    }
+    modalTranscript.innerHTML = formattedTranscript;
+    originalTranscript = meeting.full_transcript || "";
+
+
+    
+    modalActions.innerHTML = '';
+    if (meeting.action_items && meeting.action_items.length > 2) { // Check for empty JSON "[]"
+        try {
+            const actions = JSON.parse(meeting.action_items);
+            if (actions.length > 0) {
+                actions.forEach(a => {
+                    modalActions.innerHTML += `
+                        <div class="flex items-start text-sm">
+                            <span class="mr-3 mt-1 text-indigo-400 font-bold">&#9679;</span>
+                            <p class="text-white">${a.item} <span class="text-gray-400">(${a.assigned_to})</span></p>
+                        </div>
+                    `;
+                });
+            } else {
+                modalActions.innerHTML = '<p class="text-gray-500">No action items were identified.</p>';
+            }
+        } catch(e) {
+            console.error("Error parsing action items:", e);
+            modalActions.innerHTML = '<p class="text-red-400">Error loading action items.</p>';
+        }
+    } else {
+        modalActions.innerHTML = '<p class="text-gray-500">No action items were identified.</p>';
+    }
+downloadTranscriptBtn.onclick = () =>
+    window.open(`${API_BASE_URL}/meetings/${meetingId}/transcript`, "_blank");
+
+exportPdfBtn.onclick = () =>
+    window.open(`${API_BASE_URL}/meetings/${meetingId}/pdf`, "_blank");
+
+document.getElementById("translate-transcript-btn").onclick = async () => {
+    const lang = document.getElementById("translate-transcript-lang").value;
+
+    if (!originalTranscript.trim()) {
+        alert("Transcript not available");
+        return;
+    }
+
+    modalTranscript.innerText = "Translating transcript...";
+
+    const resp = await fetch(`${API_BASE_URL}/translate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            text: originalTranscript,
+            lang: lang
+        })
+    });
+
+    const data = await resp.json();
+    modalTranscript.innerText = data.translated;
+};
+
+
+document.getElementById("translate-btn").onclick = async () => {
+    const lang = document.getElementById("translate-lang").value;
+
+    if (!originalSummary.trim()) {
+        alert("Summary not available");
+        return;
+    }
+
+    modalSummary.textContent = "Translating summary...";
+
+    const resp = await fetch(`${API_BASE_URL}/translate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            text: originalSummary,
+            lang: lang
+        })
+    });
+
+    const data = await resp.json();
+    modalSummary.textContent = data.translated;
+};
+
+
+    // Show Modal
+    detailModalContainer.classList.remove('hidden');
+    detailModalContainer.classList.add('flex');
+}
+
+function hideModal() {
+    detailModalContainer.classList.add('hidden');
+    detailModalContainer.classList.remove('flex');
+}
+async function deleteMeeting(event, meetingId) {
+    event.stopPropagation();
+
+    if (!confirm("Are you sure you want to delete this meeting?")) return;
+
+    const resp = await fetch(`${API_BASE_URL}/meetings/${meetingId}`, {
+        method: "DELETE"
+    });
+
+    if (resp.ok) {
+        loadMeetingHistory();
+    } else {
+        alert("Failed to delete meeting.");
+    }
+}
+
+async function renameMeeting(event, meetingId, currentTitle) {
+    event.stopPropagation();
+
+    const newTitle = prompt("Enter new meeting name:", currentTitle);
+    if (!newTitle || newTitle.trim() === "") return;
+
+    const resp = await fetch(`${API_BASE_URL}/meetings/${meetingId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: newTitle })
+    });
+
+    if (resp.ok) {
+        loadMeetingHistory();
+    } else {
+        alert("Failed to rename meeting.");
+    }
+}
+async function uploadFile() {
+    const input = document.getElementById("upload-input");
+    const status = document.getElementById("upload-status");
+
+    if (!input.files.length) {
+        alert("Please select a file first.");
+        return;
+    }
+
+    const file = input.files[0];
+    const formData = new FormData();
+    formData.append("file", file);
+
+    status.textContent = "Uploading and processing... this may take a while.";
+
+    try {
+        const resp = await fetch(`${API_BASE_URL}/upload`, {
+            method: "POST",
+            body: formData
+        });
+
+        if (!resp.ok) {
+            throw new Error("Upload failed");
+        }
+
+        const data = await resp.json();
+
+        status.textContent = "Upload complete. Summary generated.";
+        loadMeetingHistory();
+        switchView("dashboard-view");
+
+    } catch (err) {
+        console.error(err);
+        status.textContent = "Error processing file.";
+    }
+}
+
+</script>
+</body>
+</html>
