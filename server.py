@@ -239,11 +239,20 @@ async def get_index():
 @app.get("/meetings")
 def get_meetings():
     conn = get_db_connection()
-    rows = conn.execute(
-        "SELECT * FROM meetings ORDER BY start_time DESC"
-    ).fetchall()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM meetings ORDER BY start_time DESC")
+    rows = cursor.fetchall()
+
+    columns = [desc[0] for desc in cursor.description]
+
+    result = [
+        dict(zip(columns, row))
+        for row in rows
+    ]
+
     conn.close()
-    return [dict(r) for r in rows]
+    return result
+
 
 
 class RenamePayload(BaseModel):
