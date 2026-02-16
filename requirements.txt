@@ -6,3 +6,4 @@ requests
 reportlab
 pydantic
 python-multipart
+psycopg2-binary

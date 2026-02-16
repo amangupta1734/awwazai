@@ -1,7 +1,8 @@
 import asyncio
 import json
 import os
-import sqlite3
+import psycopg2
+from psycopg2.extras import RealDictCursor
 import tempfile
 import time
 
@@ -154,69 +155,49 @@ Format:
         }
 
 
-# ----------------- DB -----------------
+# ----------------- DB (PostgreSQL Version) -----------------
 
 def get_db_connection():
-    conn = sqlite3.connect(DB_NAME, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
+    database_url = os.environ.get("DATABASE_URL")
+
+    if not database_url:
+        raise Exception("DATABASE_URL not set in environment variables")
+
+    conn = psycopg2.connect(database_url, cursor_factory=RealDictCursor)
     return conn
 
 
 def create_database():
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute(
-        """
-        CREATE TABLE IF NOT EXISTS meetings (
-            meeting_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT NOT NULL,
-            start_time DATETIME NOT NULL,
-            duration_seconds INTEGER,
-            full_transcript TEXT,
-            summary_text TEXT,
-            action_items TEXT,
-            status TEXT NOT NULL,
-            progress INTEGER DEFAULT 0
-        );
-        """
-    )
-    cursor.execute(
-        """
-        CREATE TABLE IF NOT EXISTS translations (
-            meeting_id INTEGER,
-            language TEXT,
-            translated_text TEXT,
-            PRIMARY KEY (meeting_id, language)
-        );
-        """
-    )
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS meetings (
+        meeting_id SERIAL PRIMARY KEY,
+        title TEXT NOT NULL,
+        start_time TIMESTAMP NOT NULL,
+        duration_seconds INTEGER,
+        full_transcript TEXT,
+        summary_text TEXT,
+        action_items TEXT,
+        status TEXT NOT NULL,
+        progress INTEGER DEFAULT 0
+    );
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS translations (
+        meeting_id INTEGER REFERENCES meetings(meeting_id),
+        language TEXT,
+        translated_text TEXT,
+        PRIMARY KEY (meeting_id, language)
+    );
+    """)
 
     conn.commit()
     conn.close()
-    print(f"Database {DB_NAME} initialized successfully.")
 
-
-def update_status(meeting_id: int, status: str):
-    conn = get_db_connection()
-    conn.execute(
-        "UPDATE meetings SET status = ? WHERE meeting_id = ?",
-        (status, meeting_id),
-    )
-    conn.commit()
-    conn.close()
-def update_progress(meeting_id: int, progress: int):
-    conn = get_db_connection()
-    conn.execute(
-        "UPDATE meetings SET progress = ? WHERE meeting_id = ?",
-        (progress, meeting_id),
-    )
-    conn.commit()
-    conn.close()
-
-# ----------------- OLLAMA SUMMARIZER -----------------
-
-
-
+    print("PostgreSQL database initialized successfully.")
 
 # ----------------- ASSEMBLYAI CLOUD -----------------
 
@@ -284,7 +265,7 @@ async def translate_text(payload: dict):
 def delete_meeting(meeting_id: int):
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("DELETE FROM meetings WHERE meeting_id = ?", (meeting_id,))
+    cursor.execute("DELETE FROM meetings WHERE meeting_id = %s", (meeting_id,))
     conn.commit()
     rows = cursor.rowcount
     conn.close()
@@ -300,7 +281,7 @@ def rename_meeting(meeting_id: int, payload: RenamePayload):
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute(
-        "UPDATE meetings SET title = ? WHERE meeting_id = ?",
+        "UPDATE meetings SET title = %s WHERE meeting_id = %s",
         (payload.title, meeting_id),
     )
     conn.commit()
@@ -324,7 +305,7 @@ async def upload_and_summarize(file: UploadFile = File(...)):
 
     title = f"Uploaded - {file.filename}"
     cursor.execute(
-        "INSERT INTO meetings (title, start_time, status) VALUES (?, ?, ?)",
+        "INSERT INTO meetings (title, start_time, status) VALUES (%s, %s, %s)",
         (title, datetime.now().isoformat(), "PROCESSING"),
     )
     meeting_id = cursor.lastrowid
@@ -341,8 +322,8 @@ async def upload_and_summarize(file: UploadFile = File(...)):
     cursor.execute(
         """
         UPDATE meetings
-        SET full_transcript = ?, summary_text = ?, action_items = ?, duration_seconds = ?, status = 'COMPLETED'
-        WHERE meeting_id = ?
+        SET full_transcript = %s, summary_text = %s, action_items = %s, duration_seconds = %s, status = 'COMPLETED'
+        WHERE meeting_id = %s
         """,
         (
             transcript,
@@ -366,7 +347,7 @@ async def upload_and_summarize(file: UploadFile = File(...)):
 def export_pdf(meeting_id: int):
     conn = get_db_connection()
     row = conn.execute(
-        "SELECT title, summary_text FROM meetings WHERE meeting_id = ?",
+        "SELECT title, summary_text FROM meetings WHERE meeting_id = %s",
         (meeting_id,),
     ).fetchone()
     conn.close()
@@ -390,7 +371,7 @@ def export_pdf(meeting_id: int):
 def download_transcript(meeting_id: int):
     conn = get_db_connection()
     row = conn.execute(
-        "SELECT full_transcript FROM meetings WHERE meeting_id = ?",
+        "SELECT full_transcript FROM meetings WHERE meeting_id = %s",
         (meeting_id,),
     ).fetchone()
     conn.close()
@@ -408,7 +389,7 @@ def download_transcript(meeting_id: int):
 
     # 1️⃣ Fetch original transcript
     row = conn.execute(
-        "SELECT full_transcript FROM meetings WHERE meeting_id = ?",
+        "SELECT full_transcript FROM meetings WHERE meeting_id = %s",
         (meeting_id,),
     ).fetchone()
 
@@ -431,7 +412,7 @@ def download_transcript(meeting_id: int):
 
     # 1️⃣ Check cache first
     cached = conn.execute(
-        "SELECT translated_text FROM translations WHERE meeting_id = ? AND language = ?",
+        "SELECT translated_text FROM translations WHERE meeting_id = %s AND language = %s",
         (meeting_id, target_lang),
     ).fetchone()
 
@@ -441,7 +422,7 @@ def download_transcript(meeting_id: int):
 
     # 2️⃣ Fetch ORIGINAL transcript ONLY
     row = conn.execute(
-        "SELECT full_transcript FROM meetings WHERE meeting_id = ?",
+        "SELECT full_transcript FROM meetings WHERE meeting_id = %s",
         (meeting_id,),
     ).fetchone()
 
@@ -461,7 +442,7 @@ def download_transcript(meeting_id: int):
 
     # 4️⃣ Store in cache
     conn.execute(
-        "INSERT OR REPLACE INTO translations (meeting_id, language, translated_text) VALUES (?, ?, ?)",
+        "INSERT OR REPLACE INTO translations (meeting_id, language, translated_text) VALUES (%s, %s, %s)",
         (meeting_id, target_lang, translated_text),
     )
     conn.commit()
