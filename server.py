@@ -240,18 +240,19 @@ async def get_index():
 def get_meetings():
     conn = get_db_connection()
     cursor = conn.cursor()
+
     cursor.execute("SELECT * FROM meetings ORDER BY start_time DESC")
     rows = cursor.fetchall()
 
     columns = [desc[0] for desc in cursor.description]
 
-    result = [
-        dict(zip(columns, row))
-        for row in rows
-    ]
+    result = []
+    for row in rows:
+        result.append(dict(zip(columns, row)))  # ✅ FIXED
 
     conn.close()
     return result
+
 
 
 
