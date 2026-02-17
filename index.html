@@ -5,7 +5,32 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Awwazai - AI Transcription & Summarization</title>
 
-    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.tailwindcss.com">
+// --- AUTHENTICATION FUNCTIONS ---
+function logout() {
+    // Clear tokens from storage
+    localStorage.removeItem('auth_token');
+    localStorage.removeItem('user_email');
+    sessionStorage.removeItem('auth_token');
+    sessionStorage.removeItem('user_email');
+    
+    // Redirect to login page
+    window.location.href = '/login.html';
+}
+
+// Check authentication on page load
+function checkAuth() {
+    const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+    if (!token) {
+        // Redirect to login if not authenticated
+        window.location.href = '/login.html';
+    }
+}
+
+// Call checkAuth when page loads
+checkAuth();
+
+</script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 
     <style>
@@ -50,12 +75,22 @@
                 </a>
             </nav>
         </div>
-        <div class="mt-auto border-t border-gray-700 pt-4 flex items-center group">
-            <img class="h-10 w-10 rounded-full object-cover" src="https://placehold.co/100x100/7c3aed/ffffff?text=User" alt="User Avatar">
-            <div class="ml-3">
-                <p class="text-sm font-medium text-white">Aman </p>
-                <p class="text-xs font-medium text-gray-400 group-hover:text-gray-300">Final Year Project</p>
+        <div class="mt-auto border-t border-gray-700 pt-4">
+            <div class="flex items-center group mb-4">
+                <img class="h-10 w-10 rounded-full object-cover" src="https://placehold.co/100x100/7c3aed/ffffff?text=User" alt="User Avatar">
+                <div class="ml-3 flex-1">
+                    <p class="text-sm font-medium text-white">Aman </p>
+                    <p class="text-xs font-medium text-gray-400 group-hover:text-gray-300">Final Year Project</p>
+                </div>
             </div>
+            <button 
+                onclick="logout()"
+                class="w-full flex items-center justify-center px-4 py-2 bg-gray-700 hover:bg-red-600 text-gray-300 hover:text-white rounded-lg transition duration-200 group">
+                <svg class="w-5 h-5 mr-2 group-hover:rotate-180 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path>
+                </svg>
+                <span class="font-medium">Logout</span>
+            </button>
         </div>
     </aside>
 
@@ -746,6 +781,31 @@ async function uploadFile() {
         status.textContent = "Error processing file.";
     }
 }
+
+
+// --- AUTHENTICATION FUNCTIONS ---
+function logout() {
+    // Clear tokens from storage
+    localStorage.removeItem('auth_token');
+    localStorage.removeItem('user_email');
+    sessionStorage.removeItem('auth_token');
+    sessionStorage.removeItem('user_email');
+    
+    // Redirect to login page
+    window.location.href = '/login.html';
+}
+
+// Check authentication on page load
+function checkAuth() {
+    const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+    if (!token) {
+        // Redirect to login if not authenticated
+        window.location.href = '/login.html';
+    }
+}
+
+// Call checkAuth when page loads
+checkAuth();
 
 </script>
 </body>

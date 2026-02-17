@@ -20,6 +20,13 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
 from openai import OpenAI
 
+import secrets
+from datetime import timedelta
+from passlib.context import CryptContext
+from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
+import bcrypt
+
 # ----------------- ASSEMBLYAI INIT -----------------
 client = OpenAI(
     api_key=os.environ.get("GROQ_API_KEY"),
@@ -35,6 +42,49 @@ else:
     print("✅ AssemblyAI key loaded")
 
 # ----------------- INIT -----------------
+
+
+# ----------------- AUTHENTICATION -----------------
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/login")
+
+def hash_password(password: str) -> str:
+    """Hash a password for storage."""
+    return pwd_context.hash(password)
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Verify a password against its hash."""
+    return pwd_context.verify(plain_password, hashed_password)
+
+def generate_token() -> str:
+    """Generate a secure random token."""
+    return secrets.token_urlsafe(32)
+
+def get_current_user(token: str = Depends(oauth2_scheme)):
+    """Get the current authenticated user from token."""
+    # In production, validate token against database
+    # For now, we'll do a simple check
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return token
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+    remember: bool = False
+
+class UserCreate(BaseModel):
+    email: str
+    password: str
+    name: str
+
+# Create a simple in-memory token store (for demo purposes)
+# In production, use Redis or database with expiration
+token_store = {}
 
 DB_NAME = "awwaz_ai.db"
 
@@ -168,11 +218,28 @@ def get_db_connection():
 
 
 def create_database():
+    """Create database tables."""
     conn = get_db_connection()
     cursor = conn.cursor()
 
     cursor.execute("""
-    CREATE TABLE IF NOT EXISTS meetings (
+    
+    CREATE TABLE IF NOT EXISTS users (
+        user_id SERIAL PRIMARY KEY,
+        email TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        name TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    
+    CREATE TABLE IF NOT EXISTS sessions (
+        session_id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(user_id),
+        token TEXT UNIQUE NOT NULL,
+        expires_at TIMESTAMP NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+CREATE TABLE IF NOT EXISTS meetings (
         meeting_id SERIAL PRIMARY KEY,
         title TEXT NOT NULL,
         start_time TIMESTAMP NOT NULL,
@@ -198,6 +265,27 @@ def create_database():
     conn.close()
 
     print("PostgreSQL database initialized successfully.")
+
+def create_default_user():
+    """Create a default admin user for testing."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Check if admin exists
+    cursor.execute("SELECT user_id FROM users WHERE email = %s", ("admin@awwazai.com",))
+    existing = cursor.fetchone()
+    
+    if not existing:
+        # Create default admin user
+        password_hash = hash_password("admin123")
+        cursor.execute(
+            "INSERT INTO users (email, password_hash, name) VALUES (%s, %s, %s)",
+            ("admin@awwazai.com", password_hash, "Admin User")
+        )
+        conn.commit()
+        print("✓ Default admin user created: admin@awwazai.com / admin123")
+    
+    conn.close()
 
 # ----------------- ASSEMBLYAI CLOUD -----------------
 
@@ -230,11 +318,132 @@ async def cloud_transcribe_and_summarize(file_path: str):
     duration = int(transcript.audio_duration or 0)
     return text, summary, duration
 
+
+# ----------------- AUTHENTICATION ROUTES -----------------
+
+@app.post("/api/login")
+async def login(request: LoginRequest):
+    """Authenticate user and return token."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Find user by email
+    cursor.execute("SELECT user_id, email, password_hash, name FROM users WHERE email = %s", (request.email,))
+    user = cursor.fetchone()
+    conn.close()
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password",
+        )
+    
+    # Verify password
+    if not verify_password(request.password, user['password_hash']):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password",
+        )
+    
+    # Generate token
+    token = generate_token()
+    
+    # Calculate expiration (1 day by default, 30 days if remember me)
+    expires_at = datetime.utcnow() + timedelta(days=30 if request.remember else 1)
+    
+    # Store session in database
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO sessions (user_id, token, expires_at) VALUES (%s, %s, %s)",
+        (user['user_id'], token, expires_at)
+    )
+    conn.commit()
+    conn.close()
+    
+    return {
+        "token": token,
+        "email": user['email'],
+        "name": user['name'],
+        "expires_at": expires_at.isoformat()
+    }
+
+@app.post("/api/logout")
+async def logout(token: str = Depends(oauth2_scheme)):
+    """Logout user by invalidating their token."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Delete the session
+    cursor.execute("DELETE FROM sessions WHERE token = %s", (token,))
+    conn.commit()
+    conn.close()
+    
+    return {"message": "Successfully logged out"}
+
+@app.post("/api/register")
+async def register(user: UserCreate):
+    """Register a new user."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Check if user already exists
+    cursor.execute("SELECT user_id FROM users WHERE email = %s", (user.email,))
+    existing_user = cursor.fetchone()
+    
+    if existing_user:
+        conn.close()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email already registered",
+        )
+    
+    # Hash password and create user
+    password_hash = hash_password(user.password)
+    cursor.execute(
+        "INSERT INTO users (email, password_hash, name) VALUES (%s, %s, %s) RETURNING user_id",
+        (user.email, password_hash, user.name)
+    )
+    user_id = cursor.fetchone()['user_id']
+    conn.commit()
+    conn.close()
+    
+    return {
+        "message": "User created successfully",
+        "user_id": user_id
+    }
+
+# Create a default admin user for testing
+def create_default_user():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Check if admin exists
+    cursor.execute("SELECT user_id FROM users WHERE email = %s", ("admin@awwazai.com",))
+    existing = cursor.fetchone()
+    
+    if not existing:
+        # Create default admin user
+        password_hash = hash_password("admin123")
+        cursor.execute(
+            "INSERT INTO users (email, password_hash, name) VALUES (%s, %s, %s)",
+            ("admin@awwazai.com", password_hash, "Admin User")
+        )
+        conn.commit()
+        print("✓ Default admin user created: admin@awwazai.com / admin123")
+    
+    conn.close()
+
 # ----------------- ROUTES -----------------
 @app.get("/")
 async def get_index():
     with open("index.html", "r", encoding="utf-8") as f:
         return HTMLResponse(f.read())
+@app.get("/login.html")
+async def get_login():
+    with open("login.html", "r", encoding="utf-8") as f:
+        return HTMLResponse(f.read())
+
 
 @app.get("/meetings")
 def get_meetings():
@@ -408,6 +617,7 @@ def download_transcript(meeting_id: int):
 # ----------------- STARTUP -----------------
 
 create_database()
+create_default_user()
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
