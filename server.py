@@ -241,17 +241,34 @@ def get_meetings():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT * FROM meetings ORDER BY start_time DESC")
+    cursor.execute("""
+        SELECT meeting_id, title, start_time, duration_seconds,
+               full_transcript, summary_text, action_items,
+               status, progress
+        FROM meetings
+        ORDER BY start_time DESC
+    """)
+
     rows = cursor.fetchall()
 
-    columns = [desc[0] for desc in cursor.description]
+    meetings = []
 
-    result = []
     for row in rows:
-        result.append(dict(zip(columns, row)))  # ✅ FIXED
+        meetings.append({
+            "meeting_id": row[0],
+            "title": row[1],
+            "start_time": row[2],
+            "duration_seconds": row[3],
+            "full_transcript": row[4],
+            "summary_text": row[5],
+            "action_items": row[6],
+            "status": row[7],
+            "progress": row[8],
+        })
 
     conn.close()
-    return result
+    return meetings
+
 
 
 
