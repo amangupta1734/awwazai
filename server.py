@@ -25,7 +25,6 @@ from datetime import timedelta
 from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-import bcrypt
 
 # ----------------- ASSEMBLYAI INIT -----------------
 client = OpenAI(
@@ -61,16 +60,30 @@ def generate_token() -> str:
     return secrets.token_urlsafe(32)
 
 def get_current_user(token: str = Depends(oauth2_scheme)):
-    """Get the current authenticated user from token."""
-    # In production, validate token against database
-    # For now, we'll do a simple check
-    if not token:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "SELECT user_id, expires_at FROM sessions WHERE token = %s",
+        (token,)
+    )
+    session = cursor.fetchone()
+    conn.close()
+
+    if not session:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials",
-            headers={"WWW-Authenticate": "Bearer"},
+            detail="Invalid authentication token"
         )
-    return token
+
+    if session["expires_at"] < datetime.utcnow():
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token expired"
+        )
+
+    return session["user_id"]
+
 
 class LoginRequest(BaseModel):
     email: str
@@ -446,7 +459,7 @@ async def get_login():
 
 
 @app.get("/meetings")
-def get_meetings():
+def get_meetings(user_id: int = Depends(get_current_user)):
     conn = get_db_connection()
     cursor = conn.cursor()
 
