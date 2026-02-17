@@ -250,24 +250,10 @@ def get_meetings():
     """)
 
     rows = cursor.fetchall()
-
-    meetings = []
-
-    for row in rows:
-        meetings.append({
-            "meeting_id": row[0],
-            "title": row[1],
-            "start_time": row[2],
-            "duration_seconds": row[3],
-            "full_transcript": row[4],
-            "summary_text": row[5],
-            "action_items": row[6],
-            "status": row[7],
-            "progress": row[8],
-        })
-
     conn.close()
-    return meetings
+
+    return rows
+
 
 
 
@@ -332,10 +318,12 @@ async def upload_and_summarize(file: UploadFile = File(...)):
 
     title = f"Uploaded - {file.filename}"
     cursor.execute(
-        "INSERT INTO meetings (title, start_time, status) VALUES (%s, %s, %s)",
-        (title, datetime.now().isoformat(), "PROCESSING"),
-    )
-    meeting_id = cursor.lastrowid
+            "INSERT INTO meetings (title, start_time, status) VALUES (%s, %s, %s) RETURNING meeting_id",
+            (title, datetime.utcnow(), "PROCESSING"),
+        )
+    
+    meeting_id = cursor.fetchone()["meeting_id"]
+
     conn.commit()
     conn.close()
 
@@ -373,10 +361,12 @@ async def upload_and_summarize(file: UploadFile = File(...)):
 @app.get("/meetings/{meeting_id}/pdf")
 def export_pdf(meeting_id: int):
     conn = get_db_connection()
-    row = conn.execute(
+    cursor = conn.cursor()
+    cursor.execute(
         "SELECT title, summary_text FROM meetings WHERE meeting_id = %s",
         (meeting_id,),
-    ).fetchone()
+    )
+    row = cursor.fetchone()
     conn.close()
 
     if not row:
@@ -397,10 +387,12 @@ def export_pdf(meeting_id: int):
 @app.get("/meetings/{meeting_id}/transcript")
 def download_transcript(meeting_id: int):
     conn = get_db_connection()
-    row = conn.execute(
+    cursor = conn.cursor()
+    cursor.execute(
         "SELECT full_transcript FROM meetings WHERE meeting_id = %s",
-        (meeting_id,),
-    ).fetchone()
+        (meeting_id,)
+    )
+    row = cursor.fetchone()
     conn.close()
 
     if not row:
@@ -413,74 +405,6 @@ def download_transcript(meeting_id: int):
     return FileResponse(path, filename=path)
 
     
-
-    # 1️⃣ Fetch original transcript
-    row = conn.execute(
-        "SELECT full_transcript FROM meetings WHERE meeting_id = %s",
-        (meeting_id,),
-    ).fetchone()
-
-    if not row or not row["full_transcript"]:
-        conn.close()
-        raise HTTPException(status_code=404, detail="Transcript not found")
-
-    original_text = row["full_transcript"]
-
-    # 2️⃣ Translate
-    translated_text = google_translate(original_text, target_lang)
-
-    conn.close()
-
-    return {
-        "meeting_id": meeting_id,
-        "language": target_lang,
-        "translated_transcript": translated_text
-    }
-
-    # 1️⃣ Check cache first
-    cached = conn.execute(
-        "SELECT translated_text FROM translations WHERE meeting_id = %s AND language = %s",
-        (meeting_id, target_lang),
-    ).fetchone()
-
-    if cached:
-        conn.close()
-        return {"translated": cached["translated_text"], "cached": True}
-
-    # 2️⃣ Fetch ORIGINAL transcript ONLY
-    row = conn.execute(
-        "SELECT full_transcript FROM meetings WHERE meeting_id = %s",
-        (meeting_id,),
-    ).fetchone()
-
-    if not row or not row["full_transcript"]:
-        conn.close()
-        raise HTTPException(status_code=404, detail="Transcript not found")
-
-    original_text = row["full_transcript"]
-
-    # 3️⃣ Auto-detect source language + translate
-    result = translator.translate(
-        original_text,
-        dest=target_lang
-    )
-
-    translated_text = result.text
-
-    # 4️⃣ Store in cache
-    conn.execute(
-        "INSERT OR REPLACE INTO translations (meeting_id, language, translated_text) VALUES (%s, %s, %s)",
-        (meeting_id, target_lang, translated_text),
-    )
-    conn.commit()
-    conn.close()
-
-    return {
-        "translated": translated_text,
-        "cached": False,
-        "source_lang": result.src
-    }
-
 # ----------------- STARTUP -----------------
 
 create_database()
