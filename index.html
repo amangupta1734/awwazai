@@ -850,7 +850,7 @@ async function uploadFile() {
     const formData = new FormData();
     formData.append("file", file);
 
-    status.textContent = "Uploading and processing... this may take a while.";
+    status.innerHTML = '<span class="animate-pulse">⏳ Uploading...</span>';
 
     try {
         const resp = await fetch(`${API_BASE_URL}/upload`, {
@@ -859,26 +859,57 @@ async function uploadFile() {
             body: formData
         });
 
-        if (!resp.ok) {
-            throw new Error("Upload failed");
-        }
+        if (!resp.ok) throw new Error("Upload failed");
 
         const data = await resp.json();
+        // Server returns immediately — meeting is PROCESSING in background
+        const meetingId = data.meeting_id;
 
-        let langNote = '';
-        if (data.detected_language) {
-            const { label, is_mixed } = data.detected_language;
-            langNote = ` — ${is_mixed ? '🔀' : '🌐'} Detected: ${label}`;
-        }
-
-        status.textContent = `Upload complete. Summary generated.${langNote}`;
+        status.innerHTML = '✅ Upload received! Transcribing and summarizing in background...';
         loadMeetingHistory();
         switchView("dashboard-view");
 
+        // Poll until COMPLETED or FAILED
+        pollMeetingStatus(meetingId);
+
     } catch (err) {
         console.error(err);
-        status.textContent = "Error processing file.";
+        status.textContent = "Error uploading file.";
     }
+}
+
+function pollMeetingStatus(meetingId) {
+    const maxAttempts = 60; // 5 minutes max (5s intervals)
+    let attempts = 0;
+
+    const interval = setInterval(async () => {
+        attempts++;
+        if (attempts > maxAttempts) {
+            clearInterval(interval);
+            return;
+        }
+
+        try {
+            // Reload meeting list — it will show updated status
+            await loadMeetingHistory();
+
+            // Check if the specific meeting is done
+            const meeting = allMeetings.find(m => m.meeting_id === meetingId);
+            if (meeting && (meeting.status === "COMPLETED" || meeting.status === "FAILED")) {
+                clearInterval(interval);
+                // Flash the row to draw attention
+                const rows = document.querySelectorAll(`#recent-transcripts-body tr`);
+                rows.forEach(row => {
+                    if (row.innerHTML.includes(`viewMeetingDetails(event, ${meetingId})`)) {
+                        row.classList.add("bg-indigo-900/30");
+                        setTimeout(() => row.classList.remove("bg-indigo-900/30"), 2000);
+                    }
+                });
+            }
+        } catch(e) {
+            // silently ignore poll errors
+        }
+    }, 5000); // poll every 5 seconds
 }
 
 

@@ -10,7 +10,7 @@ from datetime import datetime
 
 import requests
 import uvicorn
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, FileResponse
 from pydantic import BaseModel
@@ -365,28 +365,35 @@ async def generate_ai_summary(transcript: str, language_info: dict = None):
     detected_label = language_info.get("label", "English")
 
     chunks = chunk_text(transcript, 3000)
-    partial_summaries = []
 
-    # STEP 1: Summarize each chunk
-    for chunk in chunks[:3]:  # limit to first 3 chunks for free tier safety
-        response = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        f"You summarize meetings professionally. "
-                        f"The transcript may contain mixed languages. "
-                        f"{summary_instruction}"
-                    )
-                },
-                {"role": "user", "content": f"Summarize this meeting segment:\n\n{chunk}"}
-            ],
-            temperature=0.4,
+    # Short transcript: skip chunk pre-summarization entirely, go straight to final summary
+    if len(chunks) == 1:
+        combined_summary = chunks[0]
+    else:
+        # STEP 1: Summarize chunks in PARALLEL (asyncio.gather — all fire at once)
+        async def summarize_chunk(chunk):
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(None, lambda: client.chat.completions.create(
+                model="llama-3.1-8b-instant",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            f"You summarize meetings concisely in 3-5 sentences. "
+                            f"{summary_instruction}"
+                        )
+                    },
+                    {"role": "user", "content": f"Summarize this segment:\n\n{chunk}"}
+                ],
+                temperature=0.4,
+                max_tokens=300,
+            ))
+            return response.choices[0].message.content
+
+        partial_summaries = await asyncio.gather(
+            *[summarize_chunk(c) for c in chunks[:3]]
         )
-        partial_summaries.append(response.choices[0].message.content)
-
-    combined_summary = "\n".join(partial_summaries)
+        combined_summary = "\n".join(partial_summaries)
 
     # STEP 2: Generate final structured summary + action items
     final_prompt = f"""
@@ -416,14 +423,16 @@ Format:
 }}
 """
 
-    final_response = client.chat.completions.create(
+    loop = asyncio.get_event_loop()
+    final_response = await loop.run_in_executor(None, lambda: client.chat.completions.create(
         model="llama-3.1-8b-instant",
         messages=[
             {"role": "system", "content": "You generate structured meeting summaries following exact language instructions."},
             {"role": "user", "content": final_prompt}
         ],
         temperature=0.4,
-    )
+        max_tokens=800,
+    ))
 
     content = final_response.choices[0].message.content.strip()
     if content.startswith("```"):
@@ -540,10 +549,8 @@ def create_default_user():
 async def cloud_transcribe_and_summarize(file_path: str):
     config = aai.TranscriptionConfig(
         speaker_labels=True,
-        summarization=True,
-        summary_model=aai.SummarizationModel.informative,
-        summary_type=aai.SummarizationType.bullets,
-        language_detection=True,   # Let AssemblyAI detect language from audio
+        language_detection=True,   # detect language from audio
+        # summarization removed — we use Groq for summaries, not AssemblyAI
     )
 
     transcriber = aai.Transcriber(config=config)
@@ -772,63 +779,82 @@ def rename_meeting(meeting_id: int, payload: RenamePayload):
     return {"status": "renamed", "title": payload.title}
 
 
+async def _process_upload(meeting_id: int, path: str):
+    """Background task: transcribe → detect language → summarize → save to DB."""
+    try:
+        transcript, _, duration, audio_language_code = await cloud_transcribe_and_summarize(path)
+        language_info = await detect_language(transcript, audio_language_code=audio_language_code)
+        summary = await generate_ai_summary(transcript, language_info)
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            UPDATE meetings
+            SET full_transcript = %s, summary_text = %s, action_items = %s,
+                duration_seconds = %s, status = 'COMPLETED',
+                detected_language = %s, detected_language_codes = %s
+            WHERE meeting_id = %s
+            """,
+            (
+                transcript,
+                summary.get("summary", ""),
+                json.dumps(summary.get("action_items", [])),
+                duration,
+                language_info["label"],
+                json.dumps(language_info["detected_codes"]),
+                meeting_id,
+            ),
+        )
+        conn.commit()
+        conn.close()
+        print(f"✅ Meeting {meeting_id} processing complete")
+    except Exception as e:
+        print(f"❌ Meeting {meeting_id} processing failed: {e}")
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE meetings SET status = 'FAILED' WHERE meeting_id = %s",
+            (meeting_id,)
+        )
+        conn.commit()
+        conn.close()
+    finally:
+        try:
+            os.unlink(path)
+        except Exception:
+            pass
+
+
 @app.post("/upload")
-async def upload_and_summarize(file: UploadFile = File(...)):
-    with tempfile.NamedTemporaryFile(delete=False, suffix=file.filename) as f:
+async def upload_and_summarize(
+    file: UploadFile = File(...),
+    background_tasks: BackgroundTasks = None,
+):
+    if not background_tasks:
+        background_tasks = BackgroundTasks()
+    with tempfile.NamedTemporaryFile(delete=False, suffix="_" + file.filename) as f:
         f.write(await file.read())
         path = f.name
 
     conn = get_db_connection()
     cursor = conn.cursor()
-
     title = f"Uploaded - {file.filename}"
     cursor.execute(
-            "INSERT INTO meetings (title, start_time, status) VALUES (%s, %s, %s) RETURNING meeting_id",
-            (title, datetime.utcnow(), "PROCESSING"),
-        )
-    
-    meeting_id = cursor.fetchone()["meeting_id"]
-
-    conn.commit()
-    conn.close()
-
-    # Cloud transcription only — now returns audio_language_code from AssemblyAI
-    transcript, _, duration, audio_language_code = await cloud_transcribe_and_summarize(path)
-
-    # Detect language — AssemblyAI's audio-level code is used as primary source of truth
-    # when available; LLM text analysis is fallback only (for live WebSocket sessions)
-    language_info = await detect_language(transcript, audio_language_code=audio_language_code)
-
-    summary = await generate_ai_summary(transcript, language_info)
-
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        """
-        UPDATE meetings
-        SET full_transcript = %s, summary_text = %s, action_items = %s,
-            duration_seconds = %s, status = 'COMPLETED',
-            detected_language = %s, detected_language_codes = %s
-        WHERE meeting_id = %s
-        """,
-        (
-            transcript,
-            summary.get("summary", ""),
-            json.dumps(summary.get("action_items", [])),
-            duration,
-            language_info["label"],
-            json.dumps(language_info["detected_codes"]),
-            meeting_id,
-        ),
+        "INSERT INTO meetings (title, start_time, status) VALUES (%s, %s, %s) RETURNING meeting_id",
+        (title, datetime.utcnow(), "PROCESSING"),
     )
+    meeting_id = cursor.fetchone()["meeting_id"]
     conn.commit()
     conn.close()
+
+    # Return immediately — processing happens in the background
+    background_tasks.add_task(_process_upload, meeting_id, path)
 
     return {
         "meeting_id": meeting_id,
-        "transcript": transcript,
-        "summary": summary,
-        "detected_language": language_info,
+        "status": "PROCESSING",
+        "message": "Upload received. Transcription and summary are being generated.",
     }
 
 
