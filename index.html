@@ -683,9 +683,12 @@ function viewMeetingDetails(event, meetingId) {
         modalTitle.insertAdjacentElement('afterend', langBadgeDiv);
     }
 
-    originalSummary = modalSummary.textContent;
+    // Set summary text and capture original for translate feature
+    const summaryContent = meeting.summary_text || '';
+    modalSummary.textContent = summaryContent || 'Summary not available.';
+    originalSummary = summaryContent; // Set from data, not stale DOM
 
-    modalSummary.classList.toggle('italic', !meeting.summary_text);
+    modalSummary.classList.toggle('italic', !summaryContent);
     
     // Format the transcript for modal display
     let formattedTranscript = '<p class="text-gray-500">Transcript not available.</p>';
@@ -733,26 +736,26 @@ document.getElementById("translate-transcript-btn").onclick = async () => {
     const lang = document.getElementById("translate-transcript-lang").value;
 
     if (!originalTranscript.trim()) {
-        alert("Transcript not available");
+        modalTranscript.innerHTML = '<p class="text-red-400 italic">No transcript available to translate.</p>';
         return;
     }
 
     modalTranscript.innerText = "Translating transcript...";
 
-    const resp = await fetch(`${API_BASE_URL}/translate`, {
-        method: "POST",
-        headers: {
-        ...getAuthHeaders(),
-        "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-        text: originalTranscript,
-        lang: lang
-    })
-});
-
-    const data = await resp.json();
-    modalTranscript.innerText = data.translated;
+    try {
+        const resp = await fetch(`${API_BASE_URL}/translate`, {
+            method: "POST",
+            headers: {
+                ...getAuthHeaders(),
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ text: originalTranscript, lang: lang })
+        });
+        const data = await resp.json();
+        modalTranscript.innerText = data.translated;
+    } catch(e) {
+        modalTranscript.innerHTML = '<p class="text-red-400 italic">Translation failed. Please try again.</p>';
+    }
 };
 
 
@@ -760,26 +763,30 @@ document.getElementById("translate-btn").onclick = async () => {
     const lang = document.getElementById("translate-lang").value;
 
     if (!originalSummary.trim()) {
-        alert("Summary not available");
+        modalSummary.textContent = 'No summary available to translate.';
+        modalSummary.classList.add('italic', 'text-red-400');
         return;
     }
 
-    modalSummary.textContent = "Translating summary...";
+    modalSummary.textContent = "Translating...";
+    modalSummary.classList.add('italic', 'text-gray-400');
 
-    const resp = await fetch(`${API_BASE_URL}/translate`, {
-        method: "POST",
-        headers: {
-        ...getAuthHeaders(),
-        "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-        text: originalSummary,
-        lang: lang
-    })
-});
-
-    const data = await resp.json();
-    modalSummary.textContent = data.translated;
+    try {
+        const resp = await fetch(`${API_BASE_URL}/translate`, {
+            method: "POST",
+            headers: {
+                ...getAuthHeaders(),
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ text: originalSummary, lang: lang })
+        });
+        const data = await resp.json();
+        modalSummary.textContent = data.translated;
+        modalSummary.classList.remove('italic', 'text-gray-400', 'text-red-400');
+    } catch(e) {
+        modalSummary.textContent = 'Translation failed. Please try again.';
+        modalSummary.classList.add('italic', 'text-red-400');
+    }
 };
 
 

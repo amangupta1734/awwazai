@@ -196,13 +196,22 @@ async def detect_language(transcript: str) -> dict:
     """
     Detect the dominant language(s) in a transcript using the LLM.
     Returns a dict with:
-      - detected_codes: list of ISO 639-1 codes (e.g. ["hi", "en"])
-      - label: human-readable label (e.g. "Hinglish (Hindi + English)")
+      - detected_codes: list of ISO 639-1 codes (e.g. ["mr", "en"])
+      - label: human-readable label (e.g. "Marathi + English")
       - summary_instruction: how to write the summary
       - is_mixed: bool
     """
-    # Use just the first 1500 chars for speed
-    sample = transcript[:1500]
+    # Sample beginning, middle, end for better accuracy across long transcripts
+    length = len(transcript)
+    if length <= 3000:
+        sample = transcript
+    else:
+        chunk = 1000
+        sample = (
+            transcript[:chunk] + "\n...\n" +
+            transcript[length // 2 - chunk // 2 : length // 2 + chunk // 2] + "\n...\n" +
+            transcript[-chunk:]
+        )
 
     response = client.chat.completions.create(
         model="llama-3.1-8b-instant",
@@ -210,26 +219,39 @@ async def detect_language(transcript: str) -> dict:
             {
                 "role": "system",
                 "content": (
-                    "You are a language detection expert. Analyze the given text and identify "
-                    "ALL languages present (including code-switching / mixed language). "
+                    "You are an expert linguist specializing in South Asian languages. "
+                    "Your task is to PRECISELY identify languages in transcripts, "
+                    "especially distinguishing between languages that share the Devanagari script.\n\n"
+                    "CRITICAL DISTINCTIONS — read carefully:\n"
+                    "- Marathi (mr): Uses words like 'आहे', 'नाही', 'करा', 'सांगा', 'आणि', 'हे', 'ते', "
+                    "'आपण', 'तुम्ही', 'काय', 'कसे', 'मला', 'तुला', 'आम्ही'. "
+                    "Marathi is spoken in Maharashtra. The suffix -ला, -ची, -चे, -ना are Marathi markers.\n"
+                    "- Hindi (hi): Uses words like 'है', 'नहीं', 'करो', 'बताओ', 'और', 'यह', 'वह', "
+                    "'आप', 'तुम', 'क्या', 'कैसे', 'मुझे', 'तुम्हें', 'हम'.\n"
+                    "- IMPORTANT: Do NOT label Marathi as Hindi. They are different languages.\n"
+                    "- Hinglish = Hindi + English. Marathi + English is NOT Hinglish — label it correctly.\n\n"
                     "Respond ONLY with valid JSON. No markdown, no explanation."
                 )
             },
             {
                 "role": "user",
                 "content": (
-                    f"Detect the language(s) in this transcript excerpt:\n\n{sample}\n\n"
-                    "Return JSON with these fields:\n"
-                    "- dominant_language: ISO 639-1 code of the most-used language (e.g. 'hi', 'en', 'mr')\n"
-                    "- all_languages: array of ISO 639-1 codes of ALL languages detected\n"
+                    f"Carefully identify ALL languages in this transcript. "
+                    f"If you see Devanagari script, look for the specific marker words to determine "
+                    f"if it is Marathi or Hindi — they are different languages.\n\n"
+                    f"Transcript:\n{sample}\n\n"
+                    "Return JSON with these exact fields:\n"
+                    "- dominant_language: ISO 639-1 code of the most-used language\n"
+                    "- all_languages: array of ALL ISO 639-1 codes detected\n"
+                    "- reasoning: one sentence explaining how you identified the language(s)\n"
                     "- confidence: 'high', 'medium', or 'low'\n\n"
-                    "Common codes: en=English, hi=Hindi, mr=Marathi, ur=Urdu, ta=Tamil, "
+                    "Codes: en=English, hi=Hindi, mr=Marathi, ur=Urdu, ta=Tamil, "
                     "te=Telugu, gu=Gujarati, pa=Punjabi, bn=Bengali, es=Spanish, fr=French, de=German"
                 )
             }
         ],
-        temperature=0.1,
-        max_tokens=150,
+        temperature=0.0,
+        max_tokens=200,
     )
 
     content = response.choices[0].message.content.strip()
@@ -279,7 +301,9 @@ async def detect_language(transcript: str) -> dict:
         label = lang_name
         summary_instruction = f"Write the summary in {lang_name}."
 
-    print(f"🌐 Language detected: {label} (codes: {all_langs})")
+    reasoning = result.get("reasoning", "")
+    confidence = result.get("confidence", "?")
+    print(f"🌐 Language detected: {label} (codes: {all_langs}) | confidence={confidence} | {reasoning}")
 
     return {
         "detected_codes": all_langs,
