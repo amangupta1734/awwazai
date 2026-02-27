@@ -147,7 +147,7 @@ checkAuth();
                                 </tr>
                             </thead>
                             <tbody id="recent-transcripts-body">
-                                <tr class="text-gray-400"><td colspan="5" class="p-4 text-center">Loading meeting history...</td></tr>
+                                
                             </tbody>
                         </table>
                     </div>
@@ -1081,8 +1081,7 @@ function renderTranscriptWithNames(transcript, labels) {
         return;
     }
 
-    const lines = transcript.split('
-');
+    const lines = transcript.split('\n');
     el.innerHTML = lines.map(line => {
         // Match "A: text" pattern
         const m = line.match(/^([A-Z]):\s*(.*)/);
@@ -1220,8 +1219,7 @@ function appendChatMessage(role, text) {
             ${isUser
                 ? 'bg-indigo-600 text-white rounded-br-none'
                 : 'bg-gray-700 text-gray-200 rounded-bl-none'}">
-            ${text.replace(/
-/g, '<br>')}
+            ${text.replace(/\n/g, '<br>')}
         </div>`;
     el.appendChild(div);
     el.scrollTop = el.scrollHeight;
