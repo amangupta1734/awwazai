@@ -121,7 +121,18 @@ checkAuth();
             </div>
 
             <div>
-                <h3 class="text-xl font-bold mb-4">Meeting History</h3>
+                <div class="flex items-center gap-3 mb-4">
+                    <h3 class="text-xl font-bold">Meeting History</h3>
+                    <div class="flex-1 relative max-w-md">
+                        <input id="search-input" type="text" placeholder="Search meetings, transcripts, speakers..."
+                            class="w-full bg-gray-700 border border-gray-600 rounded-lg pl-9 pr-4 py-2 text-sm text-white placeholder-gray-400 focus:outline-none focus:border-indigo-500 transition"/>
+                        <svg class="absolute left-3 top-2.5 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                        </svg>
+                        <button id="search-clear" onclick="clearSearch()" class="hidden absolute right-3 top-2.5 text-gray-400 hover:text-white">✕</button>
+                    </div>
+                    <span id="search-results-count" class="text-xs text-gray-400 hidden"></span>
+                </div>
                 <div class="bg-gray-800 rounded-xl overflow-hidden shadow-lg">
                     <div class="overflow-x-auto">
                         <table class="w-full text-left">
@@ -183,6 +194,19 @@ checkAuth();
                         <div class="bg-gray-700 p-4 rounded-lg">
                             <h4 class="text-xl font-semibold mb-2">Action Items</h4>
                             <div id="modal-actions" class="text-gray-300 space-y-2"></div>
+                        </div>
+
+                        <!-- Speaker Labels -->
+                        <div class="bg-gray-700 p-4 rounded-lg" id="speaker-labels-section">
+                            <div class="flex items-center justify-between mb-3">
+                                <h4 class="text-xl font-semibold">Speaker Labels</h4>
+                                <button onclick="saveSpeakerLabels()" id="save-speakers-btn"
+                                    class="hidden px-3 py-1 text-xs bg-green-600 hover:bg-green-700 rounded text-white font-medium">
+                                    Save Names
+                                </button>
+                            </div>
+                            <p class="text-xs text-gray-400 mb-3">Click any speaker label in the transcript to give them a real name.</p>
+                            <div id="speaker-labels-container" class="flex flex-wrap gap-2"></div>
                         </div>
 
                         <div class="bg-gray-700 p-4 rounded-lg">
@@ -398,6 +422,48 @@ navLinks.forEach(link=>link.addEventListener('click', (e) => {
     switchView(link.dataset.target);
 }));
 
+
+function renderMeetingRows(meetings) {
+    recentTranscriptsBody.innerHTML = '';
+    if (!meetings || meetings.length === 0) {
+        recentTranscriptsBody.innerHTML = '<tr class="text-gray-400"><td colspan="6" class="p-4 text-center">No meetings found.</td></tr>';
+        return;
+    }
+    const sorted = [...meetings].sort((a,b) => new Date(b.start_time) - new Date(a.start_time));
+    sorted.forEach(meeting => {
+        const row = document.createElement('tr');
+        row.className = 'border-b border-gray-700 hover:bg-gray-700 cursor-pointer transition-colors';
+        const duration = formatDuration(meeting.duration_seconds);
+        const statusClass =
+            meeting.status === 'COMPLETED' ? 'bg-green-500/20 text-green-300' :
+            meeting.status === 'TRANSCRIBING' ? 'bg-blue-500/20 text-blue-300' :
+            meeting.status === 'SUMMARIZING' ? 'bg-purple-500/20 text-purple-300' :
+            meeting.status === 'PROCESSING' ? 'bg-yellow-500/20 text-yellow-300 animate-pulse' :
+            meeting.status === 'FAILED' ? 'bg-red-500/20 text-red-300' :
+            'bg-gray-500/20 text-gray-300';
+        const meetingDate = new Date(meeting.start_time);
+        row.innerHTML = `
+            <td class="p-4">
+                <div class="flex items-center gap-2">
+                    <span class="font-medium">${meeting.title}</span>
+                    <button class="text-gray-400 hover:text-indigo-400" title="Rename"
+                        onclick="renameMeeting(event, ${meeting.meeting_id}, '${meeting.title.replace(/'/g, "\\'")}')">✏️</button>
+                </div>
+            </td>
+            <td class="p-4">${meetingDate.toLocaleDateString()}</td>
+            <td class="p-4">${duration}</td>
+            <td class="p-4">${renderLanguageBadge(meeting.detected_language, meeting.detected_language_codes)}</td>
+            <td class="p-4"><span class="text-xs font-medium px-2 py-1 rounded-full ${statusClass}">${meeting.status}</span></td>
+            <td class="p-4 flex items-center gap-3">
+                <button class="text-indigo-400 hover:text-indigo-300 text-sm font-medium"
+                    onclick="viewMeetingDetails(event, ${meeting.meeting_id})">View</button>
+                <button class="text-red-400 hover:text-red-300" title="Delete"
+                    onclick="deleteMeeting(event, ${meeting.meeting_id})">🗑️</button>
+            </td>`;
+        recentTranscriptsBody.appendChild(row);
+    });
+}
+
 // --- DATA FETCHING ---
 function formatDuration(seconds) {
     if (seconds === undefined || seconds === null) return 'N/A';
@@ -425,74 +491,16 @@ async function loadMeetingHistory(){
         const oneWeekAgo = new Date();
         oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
 
-        if(allMeetings.length === 0){
-            recentTranscriptsBody.innerHTML='<tr class="text-gray-400"><td colspan="5" class="p-4 text-center">No meetings found.</td></tr>';
-        } else {
-            // Sort by start time descending
-            allMeetings.sort((a, b) => new Date(b.start_time) - new Date(a.start_time));
-            
-            allMeetings.forEach(meeting=>{
-                const row=document.createElement('tr');
-                row.className='border-b border-gray-700 hover:bg-gray-700 cursor-pointer';
-                
-                const duration = formatDuration(meeting.duration_seconds);
-const statusClass =
-    meeting.status === 'COMPLETED' ? 'bg-green-500/20 text-green-300' :
-    meeting.status === 'TRANSCRIBING' ? 'bg-blue-500/20 text-blue-300' :
-    meeting.status === 'SUMMARIZING' ? 'bg-purple-500/20 text-purple-300' :
-    meeting.status === 'SUMMARY_PENDING' ? 'bg-yellow-500/20 text-yellow-300' :
-    'bg-gray-500/20 text-gray-300';
-                const meetingDate = new Date(meeting.start_time);
+        // Render the table rows via shared function (also used by search)
+        renderMeetingRows(allMeetings);
 
-               row.innerHTML = `
-    <td class="p-4 flex items-center gap-2">
-        <span class="font-medium">${meeting.title}</span>
-        <button
-            class="text-gray-400 hover:text-indigo-400"
-            title="Rename"
-            onclick="renameMeeting(event, ${meeting.meeting_id}, '${meeting.title.replace(/'/g, "\\'")}')">
-            ✏️
-        </button>
-    </td>
-    <td class="p-4">${meetingDate.toLocaleDateString()}</td>
-    <td class="p-4">${duration}</td>
-    <td class="p-4">${renderLanguageBadge(meeting.detected_language, meeting.detected_language_codes)}</td>
-    <td class="p-4">
-        <span class="text-xs font-medium px-2 py-1 rounded-full ${statusClass}">
-            ${meeting.status}
-        </span>
-    </td>
-    <td class="p-4 flex items-center gap-3">
-        <button
-            class="text-indigo-400 hover:text-indigo-300 text-sm font-medium"
-            onclick="viewMeetingDetails(event, ${meeting.meeting_id})">
-            View
-        </button>
-
-        <button
-            class="text-red-400 hover:text-red-300"
-            title="Delete"
-            onclick="deleteMeeting(event, ${meeting.meeting_id})">
-            🗑️
-        </button>
-    </td>
-`;
-
-
-                recentTranscriptsBody.appendChild(row);
-
-                // Update stats
-                if (meeting.duration_seconds) {
-                    totalDuration += meeting.duration_seconds;
-                }
-                if (meeting.status === 'COMPLETED') {
-                    completedCount++;
-                }
-                if (meetingDate > oneWeekAgo) {
-                    weekCount++;
-                }
-            });
-        }
+        // Compute stats
+        allMeetings.forEach(meeting => {
+            const meetingDate = new Date(meeting.start_time);
+            if (meeting.duration_seconds) totalDuration += meeting.duration_seconds;
+            if (meeting.status === 'COMPLETED') completedCount++;
+            if (meetingDate > oneWeekAgo) weekCount++;
+        });
         // Update dashboard cards
         document.getElementById('total-meetings').textContent = allMeetings.length;
         document.getElementById('total-duration').textContent = formatDuration(totalDuration);
@@ -501,7 +509,7 @@ const statusClass =
 
     } catch(err){
         console.error("Failed to load meeting history:", err);
-        recentTranscriptsBody.innerHTML = '<tr class="text-red-400"><td colspan="5" class="p-4 text-center">Failed to load meeting history. Is the server running?</td></tr>';
+        recentTranscriptsBody.innerHTML = '<tr class="text-red-400"><td colspan="6" class="p-4 text-center">Failed to load meeting history. Is the server running?</td></tr>';
     }
 }
 // Initial load
@@ -686,20 +694,23 @@ function viewMeetingDetails(event, meetingId) {
     // Set summary text and capture original for translate feature
     const summaryContent = meeting.summary_text || '';
     modalSummary.textContent = summaryContent || 'Summary not available.';
-    originalSummary = summaryContent; // Set from data, not stale DOM
-
+    originalSummary = summaryContent;
     modalSummary.classList.toggle('italic', !summaryContent);
-    
-    // Format the transcript for modal display
-    let formattedTranscript = '<p class="text-gray-500">Transcript not available.</p>';
-    if (meeting.full_transcript) {
-        formattedTranscript = meeting.full_transcript
-            .split('\n') // Split by newlines
-            .map(line => `<div>${line}</div>`) // Wrap each line in a div
-            .join('');
+
+    // Parse speaker labels for this meeting
+    currentModalMeetingId = meeting.meeting_id;
+    currentSpeakerLabels = {};
+    if (meeting.speaker_labels) {
+        try { currentSpeakerLabels = JSON.parse(meeting.speaker_labels); } catch(e) {}
     }
-    modalTranscript.innerHTML = formattedTranscript;
+
+    // Render transcript with speaker names highlighted + clickable
     originalTranscript = meeting.full_transcript || "";
+    renderTranscriptWithNames(originalTranscript, currentSpeakerLabels);
+
+    // Render speaker label editor
+    const speakers = extractSpeakersFromTranscript(originalTranscript);
+    renderSpeakerLabels(speakers, currentSpeakerLabels);
 
 
     
@@ -897,19 +908,353 @@ function pollMeetingStatus(meetingId) {
             const meeting = allMeetings.find(m => m.meeting_id === meetingId);
             if (meeting && (meeting.status === "COMPLETED" || meeting.status === "FAILED")) {
                 clearInterval(interval);
-                // Flash the row to draw attention
-                const rows = document.querySelectorAll(`#recent-transcripts-body tr`);
-                rows.forEach(row => {
-                    if (row.innerHTML.includes(`viewMeetingDetails(event, ${meetingId})`)) {
-                        row.classList.add("bg-indigo-900/30");
-                        setTimeout(() => row.classList.remove("bg-indigo-900/30"), 2000);
-                    }
-                });
+                if (meeting.status === "COMPLETED" && meeting.full_transcript) {
+                    showSpeakerPopup(meetingId, meeting.full_transcript);
+                }
             }
         } catch(e) {
             // silently ignore poll errors
         }
     }, 5000); // poll every 5 seconds
+}
+
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FEATURE: SEARCH
+// ═══════════════════════════════════════════════════════════════════════════
+
+let searchTimeout = null;
+let isSearchActive = false;
+
+document.getElementById('search-input').addEventListener('input', function() {
+    const q = this.value.trim();
+    const clearBtn = document.getElementById('search-clear');
+    clearBtn.classList.toggle('hidden', q.length === 0);
+
+    clearTimeout(searchTimeout);
+    if (q.length === 0) {
+        clearSearch();
+        return;
+    }
+    if (q.length < 2) return;
+
+    searchTimeout = setTimeout(() => runSearch(q), 350); // debounce
+});
+
+async function runSearch(q) {
+    isSearchActive = true;
+    document.getElementById('search-results-count').classList.remove('hidden');
+    document.getElementById('search-results-count').textContent = 'Searching...';
+
+    try {
+        const resp = await fetch(`${API_BASE_URL}/search?q=${encodeURIComponent(q)}`, {
+            headers: getAuthHeaders()
+        });
+        const results = await resp.json();
+
+        allMeetings = results; // swap displayed list
+        renderMeetingRows(results);
+
+        const count = results.length;
+        document.getElementById('search-results-count').textContent =
+            count === 0 ? 'No results' : `${count} result${count !== 1 ? 's' : ''}`;
+    } catch(e) {
+        console.error('Search error:', e);
+        document.getElementById('search-results-count').textContent = 'Search failed';
+    }
+}
+
+function clearSearch() {
+    isSearchActive = false;
+    document.getElementById('search-input').value = '';
+    document.getElementById('search-clear').classList.add('hidden');
+    document.getElementById('search-results-count').classList.add('hidden');
+    loadMeetingHistory(); // restore full list
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FEATURE: SPEAKER LABELS
+// ═══════════════════════════════════════════════════════════════════════════
+
+let currentSpeakerLabels = {}; // { "A": "Rahul", "B": "Priya" }
+let currentModalMeetingId = null;
+let pendingSpeakerMeetingId = null; // for post-upload popup
+
+function extractSpeakersFromTranscript(transcript) {
+    if (!transcript) return [];
+    const matches = [...transcript.matchAll(/^([A-Z]):/gm)];
+    return [...new Set(matches.map(m => m[1]))].sort();
+}
+
+function renderSpeakerLabels(speakers, labels) {
+    const container = document.getElementById('speaker-labels-container');
+    const saveBtn = document.getElementById('save-speakers-btn');
+    container.innerHTML = '';
+
+    if (!speakers.length) {
+        container.innerHTML = '<p class="text-xs text-gray-500">No labeled speakers found in this transcript.</p>';
+        return;
+    }
+
+    speakers.forEach(code => {
+        const currentName = labels[code] || '';
+        const pill = document.createElement('div');
+        pill.className = 'flex items-center gap-2 bg-gray-800 border border-gray-600 rounded-lg px-3 py-1.5';
+        pill.innerHTML = `
+            <span class="text-xs font-bold text-indigo-400 w-5 text-center">${code}</span>
+            <span class="text-gray-500 text-xs">→</span>
+            <input data-speaker="${code}" type="text" value="${currentName}"
+                placeholder="Enter name..."
+                class="bg-transparent text-sm text-white placeholder-gray-500 focus:outline-none w-28"
+                oninput="onSpeakerInputChange()"/>
+        `;
+        container.appendChild(pill);
+    });
+
+    saveBtn.classList.remove('hidden');
+}
+
+function onSpeakerInputChange() {
+    // collect current values
+    const inputs = document.querySelectorAll('#speaker-labels-container input[data-speaker]');
+    inputs.forEach(inp => {
+        const code = inp.dataset.speaker;
+        currentSpeakerLabels[code] = inp.value.trim();
+    });
+}
+
+async function saveSpeakerLabels() {
+    if (!currentModalMeetingId) return;
+    const saveBtn = document.getElementById('save-speakers-btn');
+    saveBtn.textContent = 'Saving...';
+    saveBtn.disabled = true;
+
+    try {
+        await fetch(`${API_BASE_URL}/meetings/${currentModalMeetingId}/speakers`, {
+            method: 'PATCH',
+            headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+            body: JSON.stringify({ labels: currentSpeakerLabels })
+        });
+
+        // Update local allMeetings cache
+        const m = allMeetings.find(m => m.meeting_id === currentModalMeetingId);
+        if (m) m.speaker_labels = JSON.stringify(currentSpeakerLabels);
+
+        // Re-render transcript with real names
+        renderTranscriptWithNames(
+            document.getElementById('modal-transcript')._rawTranscript || '',
+            currentSpeakerLabels
+        );
+
+        saveBtn.textContent = '✓ Saved!';
+        setTimeout(() => { saveBtn.textContent = 'Save Names'; saveBtn.disabled = false; }, 1500);
+    } catch(e) {
+        saveBtn.textContent = 'Save Names';
+        saveBtn.disabled = false;
+        console.error('Save speakers failed:', e);
+    }
+}
+
+function renderTranscriptWithNames(transcript, labels) {
+    const el = document.getElementById('modal-transcript');
+    el._rawTranscript = transcript; // store raw for re-render
+
+    if (!transcript) {
+        el.innerHTML = '<p class="text-gray-500">Transcript not available.</p>';
+        return;
+    }
+
+    const lines = transcript.split('
+');
+    el.innerHTML = lines.map(line => {
+        // Match "A: text" pattern
+        const m = line.match(/^([A-Z]):\s*(.*)/);
+        if (m) {
+            const code = m[1];
+            const text = m[2];
+            const name = labels[code] ? labels[code] : `Speaker ${code}`;
+            const colorClass = ['text-indigo-400','text-green-400','text-yellow-400','text-pink-400','text-orange-400'][
+                code.charCodeAt(0) % 5
+            ];
+            return `<div class="mb-1"><span class="font-bold ${colorClass} cursor-pointer hover:underline"
+                onclick="focusSpeakerInput('${code}')" title="Click to rename">${name}</span>
+                <span class="text-gray-300"> ${text}</span></div>`;
+        }
+        return `<div class="text-gray-400">${line}</div>`;
+    }).join('');
+}
+
+function focusSpeakerInput(code) {
+    const input = document.querySelector(`#speaker-labels-container input[data-speaker="${code}"]`);
+    if (input) {
+        input.focus();
+        input.select();
+        input.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+}
+
+// Post-upload speaker popup
+function showSpeakerPopup(meetingId, transcript) {
+    pendingSpeakerMeetingId = meetingId;
+    const speakers = extractSpeakersFromTranscript(transcript);
+    if (!speakers.length) return;
+
+    const fields = document.getElementById('speaker-popup-fields');
+    fields.innerHTML = speakers.map(code => `
+        <div class="flex items-center gap-3">
+            <span class="text-sm font-bold text-indigo-400 w-20">Speaker ${code}</span>
+            <input data-speaker="${code}" type="text" placeholder="Enter real name..."
+                class="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-3 py-1.5 text-sm text-white placeholder-gray-400 focus:outline-none focus:border-indigo-500"/>
+        </div>
+    `).join('');
+
+    document.getElementById('speaker-popup').classList.remove('hidden');
+}
+
+async function saveSpeakerPopup() {
+    const inputs = document.querySelectorAll('#speaker-popup-fields input[data-speaker]');
+    const labels = {};
+    inputs.forEach(inp => {
+        if (inp.value.trim()) labels[inp.dataset.speaker] = inp.value.trim();
+    });
+
+    if (Object.keys(labels).length && pendingSpeakerMeetingId) {
+        await fetch(`${API_BASE_URL}/meetings/${pendingSpeakerMeetingId}/speakers`, {
+            method: 'PATCH',
+            headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+            body: JSON.stringify({ labels })
+        });
+        const m = allMeetings.find(m => m.meeting_id === pendingSpeakerMeetingId);
+        if (m) m.speaker_labels = JSON.stringify(labels);
+    }
+    closeSpeakerPopup();
+}
+
+function closeSpeakerPopup() {
+    document.getElementById('speaker-popup').classList.add('hidden');
+    pendingSpeakerMeetingId = null;
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FEATURE: MEETING Q&A CHAT
+// ═══════════════════════════════════════════════════════════════════════════
+
+let chatOpen = false;
+let chatHistory = []; // {role, content}
+let activeChatMeetingId = null;
+
+function toggleChat() {
+    chatOpen = !chatOpen;
+    const panel = document.getElementById('chat-panel');
+    const icon = document.getElementById('chat-fab-icon');
+    const closeIcon = document.getElementById('chat-fab-close');
+
+    panel.classList.toggle('hidden', !chatOpen);
+    icon.classList.toggle('hidden', chatOpen);
+    closeIcon.classList.toggle('hidden', !chatOpen);
+
+    if (chatOpen) populateChatMeetingSelect();
+}
+
+function populateChatMeetingSelect() {
+    const select = document.getElementById('chat-meeting-select');
+    const completedMeetings = allMeetings.filter(m => m.status === 'COMPLETED');
+    select.innerHTML = '<option value="">— Select a meeting —</option>' +
+        completedMeetings.map(m =>
+            `<option value="${m.meeting_id}">${m.title}</option>`
+        ).join('');
+}
+
+function onChatMeetingChange() {
+    const meetingId = parseInt(document.getElementById('chat-meeting-select').value);
+    if (!meetingId) return;
+
+    activeChatMeetingId = meetingId;
+    chatHistory = [];
+
+    const meeting = allMeetings.find(m => m.meeting_id === meetingId);
+    const messagesEl = document.getElementById('chat-messages');
+
+    let labels = {};
+    if (meeting?.speaker_labels) {
+        try { labels = JSON.parse(meeting.speaker_labels); } catch(e) {}
+    }
+    const speakerNames = Object.values(labels);
+    const speakerNote = speakerNames.length
+        ? `<span class="text-indigo-400">Speakers: ${speakerNames.join(', ')}</span> · `
+        : '';
+
+    messagesEl.innerHTML = `
+        <div class="bg-gray-700/50 rounded-lg p-3 text-xs text-gray-300">
+            ${speakerNote}Ask anything about this meeting — decisions, action items, what someone said.
+        </div>`;
+
+    document.getElementById('chat-input').focus();
+}
+
+function appendChatMessage(role, text) {
+    const el = document.getElementById('chat-messages');
+    const isUser = role === 'user';
+    const div = document.createElement('div');
+    div.className = `flex ${isUser ? 'justify-end' : 'justify-start'}`;
+    div.innerHTML = `
+        <div class="max-w-[80%] px-3 py-2 rounded-xl text-sm leading-relaxed
+            ${isUser
+                ? 'bg-indigo-600 text-white rounded-br-none'
+                : 'bg-gray-700 text-gray-200 rounded-bl-none'}">
+            ${text.replace(/
+/g, '<br>')}
+        </div>`;
+    el.appendChild(div);
+    el.scrollTop = el.scrollHeight;
+}
+
+function appendChatTyping() {
+    const el = document.getElementById('chat-messages');
+    const div = document.createElement('div');
+    div.id = 'chat-typing';
+    div.className = 'flex justify-start';
+    div.innerHTML = `<div class="bg-gray-700 px-4 py-2 rounded-xl rounded-bl-none text-gray-400 text-sm">
+        <span class="animate-pulse">Thinking...</span></div>`;
+    el.appendChild(div);
+    el.scrollTop = el.scrollHeight;
+}
+
+async function sendChatMessage() {
+    const input = document.getElementById('chat-input');
+    const sendBtn = document.getElementById('chat-send-btn');
+    const q = input.value.trim();
+    if (!q || !activeChatMeetingId) return;
+
+    input.value = '';
+    sendBtn.disabled = true;
+
+    appendChatMessage('user', q);
+    chatHistory.push({ role: 'user', content: q });
+    appendChatTyping();
+
+    try {
+        const resp = await fetch(`${API_BASE_URL}/meetings/${activeChatMeetingId}/chat`, {
+            method: 'POST',
+            headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+            body: JSON.stringify({ meeting_id: activeChatMeetingId, messages: chatHistory })
+        });
+        const data = await resp.json();
+        const answer = data.answer || 'Sorry, I could not generate a response.';
+
+        document.getElementById('chat-typing')?.remove();
+        appendChatMessage('assistant', answer);
+        chatHistory.push({ role: 'assistant', content: answer });
+    } catch(e) {
+        document.getElementById('chat-typing')?.remove();
+        appendChatMessage('assistant', '⚠️ Error connecting to server.');
+    } finally {
+        sendBtn.disabled = false;
+        input.focus();
+    }
 }
 
 
@@ -938,5 +1283,51 @@ function checkAuth() {
 checkAuth();
 
 </script>
+<!-- ── SPEAKER LABEL POPUP ─────────────────────────────────────── -->
+<div id="speaker-popup" class="hidden fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4">
+    <div class="bg-gray-800 rounded-xl p-6 w-full max-w-sm shadow-2xl border border-gray-600">
+        <h3 class="text-lg font-bold text-white mb-1">Label Speakers</h3>
+        <p class="text-xs text-gray-400 mb-4">Give each speaker a real name. You can edit these later in the modal.</p>
+        <div id="speaker-popup-fields" class="space-y-3 mb-4"></div>
+        <div class="flex gap-3">
+            <button onclick="saveSpeakerPopup()" class="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-bold">Save</button>
+            <button onclick="closeSpeakerPopup()" class="flex-1 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg text-sm">Skip</button>
+        </div>
+    </div>
+</div>
+
+<!-- ── FLOATING Q&A CHAT ─────────────────────────────────────────── -->
+<div id="chat-fab" onclick="toggleChat()"
+    class="fixed bottom-6 right-6 z-50 w-14 h-14 bg-indigo-600 hover:bg-indigo-700 rounded-full shadow-xl flex items-center justify-center cursor-pointer transition-transform hover:scale-110">
+    <svg id="chat-fab-icon" class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
+    </svg>
+    <span id="chat-fab-close" class="hidden text-white text-xl font-bold leading-none">✕</span>
+</div>
+
+<div id="chat-panel" class="hidden fixed bottom-24 right-6 z-50 w-96 bg-gray-800 rounded-2xl shadow-2xl border border-gray-600 flex flex-col" style="max-height: 520px;">
+    <!-- Header -->
+    <div class="p-4 border-b border-gray-700 flex-shrink-0">
+        <p class="text-xs font-semibold text-indigo-400 uppercase tracking-wide mb-1">Meeting Q&A</p>
+        <select id="chat-meeting-select" onchange="onChatMeetingChange()"
+            class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-indigo-500">
+            <option value="">— Select a meeting —</option>
+        </select>
+    </div>
+    <!-- Messages -->
+    <div id="chat-messages" class="flex-1 overflow-y-auto p-4 space-y-3 text-sm"></div>
+    <!-- Input -->
+    <div class="p-3 border-t border-gray-700 flex gap-2 flex-shrink-0">
+        <input id="chat-input" type="text" placeholder="Ask anything about this meeting..."
+            class="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-400 focus:outline-none focus:border-indigo-500"
+            onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault();sendChatMessage();}"/>
+        <button onclick="sendChatMessage()" id="chat-send-btn"
+            class="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-white text-sm font-bold transition">
+            ➤
+        </button>
+    </div>
+</div>
+
 </body>
 </html>

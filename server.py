@@ -497,7 +497,8 @@ CREATE TABLE IF NOT EXISTS meetings (
         status TEXT NOT NULL,
         progress INTEGER DEFAULT 0,
         detected_language TEXT DEFAULT NULL,
-        detected_language_codes TEXT DEFAULT NULL
+        detected_language_codes TEXT DEFAULT NULL,
+        speaker_labels TEXT DEFAULT NULL
     );
     """)
 
@@ -516,6 +517,9 @@ CREATE TABLE IF NOT EXISTS meetings (
     """)
     cursor.execute("""
         ALTER TABLE meetings ADD COLUMN IF NOT EXISTS detected_language_codes TEXT DEFAULT NULL;
+    """)
+    cursor.execute("""
+        ALTER TABLE meetings ADD COLUMN IF NOT EXISTS speaker_labels TEXT DEFAULT NULL;
     """)
 
     conn.commit()
@@ -716,7 +720,7 @@ def get_meetings(user_id: int = Depends(get_current_user)):
         SELECT meeting_id, title, start_time, duration_seconds,
                full_transcript, summary_text, action_items,
                status, progress,
-               detected_language, detected_language_codes
+               detected_language, detected_language_codes, speaker_labels
         FROM meetings
         ORDER BY start_time DESC
     """)
@@ -905,6 +909,158 @@ def download_transcript(meeting_id: int):
     return FileResponse(path, filename=path)
 
     
+
+class SpeakerLabelsPayload(BaseModel):
+    labels: dict  # e.g. {"A": "Rahul", "B": "Priya"}
+
+class ChatPayload(BaseModel):
+    meeting_id: int
+    messages: list  # list of {"role": "user"/"assistant", "content": "..."}
+
+class SearchQuery(BaseModel):
+    q: str
+
+
+# ── SPEAKER LABELS ────────────────────────────────────────────────────────────
+
+@app.patch("/meetings/{meeting_id}/speakers")
+def update_speaker_labels(meeting_id: int, payload: SpeakerLabelsPayload):
+    """Save speaker label map (e.g. A→Rahul) for a meeting."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE meetings SET speaker_labels = %s WHERE meeting_id = %s RETURNING meeting_id",
+        (json.dumps(payload.labels), meeting_id)
+    )
+    row = cursor.fetchone()
+    conn.commit()
+    conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    return {"status": "ok", "labels": payload.labels}
+
+
+@app.get("/meetings/{meeting_id}/speakers")
+def get_speaker_labels(meeting_id: int):
+    """Get speaker label map for a meeting."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT speaker_labels FROM meetings WHERE meeting_id = %s",
+        (meeting_id,)
+    )
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    labels = {}
+    if row["speaker_labels"]:
+        try:
+            labels = json.loads(row["speaker_labels"])
+        except Exception:
+            pass
+    return {"labels": labels}
+
+
+# ── SEARCH ────────────────────────────────────────────────────────────────────
+
+@app.get("/search")
+def search_meetings(q: str, user_id: int = Depends(get_current_user)):
+    """Full-text search across title, transcript, summary, action_items, speaker_labels."""
+    if not q or len(q.strip()) < 2:
+        return []
+
+    pattern = f"%{q.strip()}%"
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT meeting_id, title, start_time, duration_seconds,
+               full_transcript, summary_text, action_items,
+               status, progress, detected_language, detected_language_codes,
+               speaker_labels
+        FROM meetings
+        WHERE
+            title ILIKE %s OR
+            full_transcript ILIKE %s OR
+            summary_text ILIKE %s OR
+            action_items ILIKE %s OR
+            speaker_labels ILIKE %s
+        ORDER BY start_time DESC
+        LIMIT 50
+    """, (pattern, pattern, pattern, pattern, pattern))
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
+
+
+# ── MEETING Q&A CHAT ─────────────────────────────────────────────────────────
+
+@app.post("/meetings/{meeting_id}/chat")
+async def meeting_chat(meeting_id: int, payload: ChatPayload):
+    """Answer questions about a meeting using the transcript as context."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT title, full_transcript, summary_text, speaker_labels FROM meetings WHERE meeting_id = %s",
+        (meeting_id,)
+    )
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+
+    transcript = row["full_transcript"] or ""
+    summary = row["summary_text"] or ""
+    title = row["title"] or "Meeting"
+    speaker_labels = {}
+    if row["speaker_labels"]:
+        try:
+            speaker_labels = json.loads(row["speaker_labels"])
+        except Exception:
+            pass
+
+    # Replace generic speaker labels with real names in transcript context
+    transcript_with_names = transcript
+    for code, name in speaker_labels.items():
+        transcript_with_names = transcript_with_names.replace(f"{code}:", f"{name}:")
+
+    # Truncate transcript to fit context (keep ~6000 chars)
+    if len(transcript_with_names) > 6000:
+        transcript_with_names = transcript_with_names[:6000] + "\n...[transcript truncated]"
+
+    system_prompt = f"""You are a helpful assistant that answers questions about a meeting.
+
+Meeting title: {title}
+
+Meeting summary:
+{summary}
+
+Full transcript:
+{transcript_with_names}
+
+Answer questions based only on what was discussed in this meeting.
+If something was not mentioned in the meeting, say so clearly.
+Be concise and direct. If the user asks in Hindi or Marathi, respond in that language."""
+
+    messages = [{"role": "system", "content": system_prompt}]
+    # Add conversation history from payload (last 10 turns max)
+    for msg in payload.messages[-10:]:
+        if msg.get("role") in ("user", "assistant") and msg.get("content"):
+            messages.append({"role": msg["role"], "content": msg["content"]})
+
+    loop = asyncio.get_event_loop()
+    response = await loop.run_in_executor(None, lambda: client.chat.completions.create(
+        model="llama-3.1-8b-instant",
+        messages=messages,
+        temperature=0.4,
+        max_tokens=500,
+    ))
+
+    answer = response.choices[0].message.content.strip()
+    return {"answer": answer}
+
+
 # ----------------- STARTUP -----------------
 
 create_database()
