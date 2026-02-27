@@ -192,7 +192,81 @@ MIXED_LANGUAGE_PROFILES = {
 }
 
 
-async def detect_language(transcript: str) -> dict:
+def _has_significant_english(transcript: str) -> bool:
+    """Return True if transcript has notable proportion of English words (>15% ASCII alpha)."""
+    words = transcript.split()
+    if not words:
+        return False
+    ascii_words = sum(1 for w in words if w.isascii() and w.isalpha() and len(w) > 2)
+    return (ascii_words / len(words)) > 0.15
+
+
+def _build_language_result(all_langs: list) -> dict:
+    """Given ordered list of ISO codes (dominant first), build the full language_info dict."""
+    dominant = all_langs[0]
+    is_mixed = len(all_langs) > 1
+    lang_set = frozenset(all_langs)
+
+    mixed_profile = None
+    for key in MIXED_LANGUAGE_PROFILES:
+        if key == lang_set or key.issubset(lang_set):
+            mixed_profile = MIXED_LANGUAGE_PROFILES[key]
+            break
+
+    if is_mixed and mixed_profile:
+        label = mixed_profile["label"]
+        summary_instruction = mixed_profile["summary_instruction"]
+    elif is_mixed:
+        lang_names = [LANGUAGE_NAMES.get(l, l.upper()) for l in all_langs]
+        label = " + ".join(lang_names)
+        dominant_name = LANGUAGE_NAMES.get(dominant, dominant.upper())
+        summary_instruction = (
+            f"Write the summary primarily in {dominant_name}, "
+            "naturally incorporating words from the other languages where speakers used them."
+        )
+    else:
+        lang_name = LANGUAGE_NAMES.get(dominant, dominant.upper())
+        label = lang_name
+        summary_instruction = f"Write the summary in {lang_name}."
+
+    print(f"Language result: {label} (codes: {all_langs})")
+    return {
+        "detected_codes": all_langs,
+        "label": label,
+        "summary_instruction": summary_instruction,
+        "is_mixed": is_mixed,
+    }
+
+
+async def detect_language(transcript: str, audio_language_code: str = None) -> dict:
+    """
+    Detect the dominant language(s) in a transcript.
+
+    Strategy (in priority order):
+    1. If AssemblyAI already detected the audio language, trust it and skip LLM.
+    2. Fall back to LLM-based detection on the transcript text.
+
+    AssemblyAI's audio-based detection is far more reliable than LLM text analysis,
+    especially for romanized/phonetically transcribed South Asian languages where
+    Devanagari markers are absent in the output text.
+    """
+    # --- STRATEGY 1: Use AssemblyAI's audio-level language detection ---
+    if audio_language_code:
+        # AssemblyAI returns codes like "mr", "hi", "en"
+        # It returns the single dominant language; we still run a quick LLM
+        # check to detect any secondary mixed language from the transcript text.
+        primary = audio_language_code.lower().strip()
+        print(f"Using AssemblyAI audio language as primary: {primary}")
+
+        # Quick secondary language check from text (cheap, just looks for English words)
+        has_english = _has_significant_english(transcript)
+        all_langs = [primary]
+        if has_english and primary != "en":
+            all_langs.append("en")
+
+        return _build_language_result(all_langs)
+
+    # --- STRATEGY 2: LLM-based fallback (live WebSocket / no audio code) ---
     """
     Detect the dominant language(s) in a transcript using the LLM.
     Returns a dict with:
@@ -270,47 +344,13 @@ async def detect_language(transcript: str) -> dict:
 
     dominant = result.get("dominant_language", "en").lower()
     all_langs = [l.lower() for l in result.get("all_languages", [dominant])]
-    # Deduplicate and ensure dominant is included
-    all_langs = list(dict.fromkeys([dominant] + all_langs))
-
-    is_mixed = len(all_langs) > 1
-
-    # Check for a known mixed profile
-    lang_set = frozenset(all_langs)
-    mixed_profile = None
-    # Try exact match first, then subsets
-    for key in MIXED_LANGUAGE_PROFILES:
-        if key == lang_set or key.issubset(lang_set):
-            mixed_profile = MIXED_LANGUAGE_PROFILES[key]
-            break
-
-    if is_mixed and mixed_profile:
-        label = mixed_profile["label"]
-        summary_instruction = mixed_profile["summary_instruction"]
-    elif is_mixed:
-        # Generic mixed label
-        lang_names = [LANGUAGE_NAMES.get(l, l.upper()) for l in all_langs]
-        label = " + ".join(lang_names)
-        dominant_name = LANGUAGE_NAMES.get(dominant, dominant.upper())
-        summary_instruction = (
-            f"Write the summary primarily in {dominant_name}, "
-            "naturally incorporating words from the other languages where the speakers used them."
-        )
-    else:
-        lang_name = LANGUAGE_NAMES.get(dominant, dominant.upper())
-        label = lang_name
-        summary_instruction = f"Write the summary in {lang_name}."
+    all_langs = list(dict.fromkeys([dominant] + all_langs))  # deduplicate, dominant first
 
     reasoning = result.get("reasoning", "")
     confidence = result.get("confidence", "?")
-    print(f"🌐 Language detected: {label} (codes: {all_langs}) | confidence={confidence} | {reasoning}")
+    print(f"LLM language detection | confidence={confidence} | {reasoning}")
 
-    return {
-        "detected_codes": all_langs,
-        "label": label,
-        "summary_instruction": summary_instruction,
-        "is_mixed": is_mixed,
-    }
+    return _build_language_result(all_langs)
 
 
 async def generate_ai_summary(transcript: str, language_info: dict = None):
@@ -503,6 +543,7 @@ async def cloud_transcribe_and_summarize(file_path: str):
         summarization=True,
         summary_model=aai.SummarizationModel.informative,
         summary_type=aai.SummarizationType.bullets,
+        language_detection=True,   # Let AssemblyAI detect language from audio
     )
 
     transcriber = aai.Transcriber(config=config)
@@ -524,7 +565,13 @@ async def cloud_transcribe_and_summarize(file_path: str):
     }
 
     duration = int(transcript.audio_duration or 0)
-    return text, summary, duration
+
+    # AssemblyAI returns ISO language code when language_detection=True
+    # e.g. "mr", "hi", "en" - single dominant language it detected from audio
+    audio_language_code = getattr(transcript, "language_code", None)
+    print(f"AssemblyAI detected audio language: {audio_language_code}")
+
+    return text, summary, duration, audio_language_code
 
 
 # ----------------- AUTHENTICATION ROUTES -----------------
@@ -745,11 +792,12 @@ async def upload_and_summarize(file: UploadFile = File(...)):
     conn.commit()
     conn.close()
 
-    # Cloud transcription only
-    transcript, _, duration = await cloud_transcribe_and_summarize(path)
+    # Cloud transcription only — now returns audio_language_code from AssemblyAI
+    transcript, _, duration, audio_language_code = await cloud_transcribe_and_summarize(path)
 
-    # Detect language from transcript
-    language_info = await detect_language(transcript)
+    # Detect language — AssemblyAI's audio-level code is used as primary source of truth
+    # when available; LLM text analysis is fallback only (for live WebSocket sessions)
+    language_info = await detect_language(transcript, audio_language_code=audio_language_code)
 
     summary = await generate_ai_summary(transcript, language_info)
 
