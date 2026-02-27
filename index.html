@@ -300,12 +300,18 @@ function getAuthHeaders() {
 
     if (!token) {
         window.location.href = "/login.html";
-        return {};
+        return null;  // caller must check for null
     }
 
-    return {
-        "Authorization": "Bearer " + token
-    };
+    return { "Authorization": "Bearer " + token };
+}
+
+function getAuthHeadersOrNull() {
+    // Returns headers or null without redirecting — safe for conditional use
+    const token = localStorage.getItem('auth_token') ||
+                  sessionStorage.getItem('auth_token');
+    if (!token) return null;
+    return { "Authorization": "Bearer " + token };
 }
 
 // --- CONFIGURATION ---
@@ -474,13 +480,17 @@ function formatDuration(seconds) {
 
 async function loadMeetingHistory(){
     try{
-        // Use the full, absolute path for the fetch request
-        const resp = await fetch(`${API_BASE_URL}/meetings`, {
-            headers: getAuthHeaders()
-        });
+        const headers = getAuthHeaders();
+        if (!headers || !headers['Authorization']) return;
 
+        const resp = await fetch(`${API_BASE_URL}/meetings`, { headers });
+
+        if (resp.status === 401) {
+            window.location.href = '/login.html';
+            return;
+        }
         if (!resp.ok) {
-            throw new Error(`HTTP error! status: ${resp.status}`);
+            throw new Error(`HTTP ${resp.status} - ${resp.statusText}`);
         }
         allMeetings = await resp.json(); // Store meetings globally
         
@@ -509,11 +519,16 @@ async function loadMeetingHistory(){
 
     } catch(err){
         console.error("Failed to load meeting history:", err);
-        recentTranscriptsBody.innerHTML = '<tr class="text-red-400"><td colspan="6" class="p-4 text-center">Failed to load meeting history. Is the server running?</td></tr>';
+        recentTranscriptsBody.innerHTML = `<tr class="text-red-400"><td colspan="6" class="p-4 text-center">
+            Failed to load meetings: ${err.message}. Check the browser console for details.
+        </td></tr>`;
     }
 }
 // Initial load
-document.addEventListener('DOMContentLoaded', () => switchView('dashboard-view'));
+document.addEventListener('DOMContentLoaded', () => {
+    // Small delay to ensure auth token is available from storage
+    setTimeout(() => switchView('dashboard-view'), 50);
+});
 
 
 // --- WEBSOCKET & MICROPHONE LOGIC ---
@@ -757,7 +772,7 @@ document.getElementById("translate-transcript-btn").onclick = async () => {
         const resp = await fetch(`${API_BASE_URL}/translate`, {
             method: "POST",
             headers: {
-                ...getAuthHeaders(),
+                ...(getAuthHeaders() || {}),
                 "Content-Type": "application/json"
             },
             body: JSON.stringify({ text: originalTranscript, lang: lang })
@@ -786,7 +801,7 @@ document.getElementById("translate-btn").onclick = async () => {
         const resp = await fetch(`${API_BASE_URL}/translate`, {
             method: "POST",
             headers: {
-                ...getAuthHeaders(),
+                ...(getAuthHeaders() || {}),
                 "Content-Type": "application/json"
             },
             body: JSON.stringify({ text: originalSummary, lang: lang })
@@ -817,7 +832,7 @@ async function deleteMeeting(event, meetingId) {
 
     const resp = await fetch(`${API_BASE_URL}/meetings/${meetingId}`, {
         method: "DELETE",
-        headers: getAuthHeaders()
+        headers: getAuthHeaders() || {}
     });
 
     if (resp.ok) {
@@ -836,7 +851,7 @@ async function renameMeeting(event, meetingId, currentTitle) {
     const resp = await fetch(`${API_BASE_URL}/meetings/${meetingId}`, {
         method: "PUT",
         headers: {
-            ...getAuthHeaders(),
+            ...(getAuthHeaders() || {}),
             "Content-Type": "application/json"
         },
         body: JSON.stringify({ title: newTitle })
@@ -866,7 +881,7 @@ async function uploadFile() {
     try {
         const resp = await fetch(`${API_BASE_URL}/upload`, {
             method: "POST",
-            headers: getAuthHeaders(),
+            headers: getAuthHeaders() || {},
             body: formData
         });
 
@@ -949,7 +964,7 @@ async function runSearch(q) {
 
     try {
         const resp = await fetch(`${API_BASE_URL}/search?q=${encodeURIComponent(q)}`, {
-            headers: getAuthHeaders()
+            headers: getAuthHeaders() || {}
         });
         const results = await resp.json();
 
@@ -1034,7 +1049,7 @@ async function saveSpeakerLabels() {
     try {
         await fetch(`${API_BASE_URL}/meetings/${currentModalMeetingId}/speakers`, {
             method: 'PATCH',
-            headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+            headers: { ...(getAuthHeaders() || {}), 'Content-Type': 'application/json' },
             body: JSON.stringify({ labels: currentSpeakerLabels })
         });
 
@@ -1123,7 +1138,7 @@ async function saveSpeakerPopup() {
     if (Object.keys(labels).length && pendingSpeakerMeetingId) {
         await fetch(`${API_BASE_URL}/meetings/${pendingSpeakerMeetingId}/speakers`, {
             method: 'PATCH',
-            headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+            headers: { ...(getAuthHeaders() || {}), 'Content-Type': 'application/json' },
             body: JSON.stringify({ labels })
         });
         const m = allMeetings.find(m => m.meeting_id === pendingSpeakerMeetingId);
@@ -1239,7 +1254,7 @@ async function sendChatMessage() {
     try {
         const resp = await fetch(`${API_BASE_URL}/meetings/${activeChatMeetingId}/chat`, {
             method: 'POST',
-            headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+            headers: { ...(getAuthHeaders() || {}), 'Content-Type': 'application/json' },
             body: JSON.stringify({ meeting_id: activeChatMeetingId, messages: chatHistory })
         });
         const data = await resp.json();
