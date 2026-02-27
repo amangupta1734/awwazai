@@ -130,6 +130,7 @@ checkAuth();
                                     <th class="p-4 font-semibold">Title</th>
                                     <th class="p-4 font-semibold">Date</th>
                                     <th class="p-4 font-semibold">Duration</th>
+                                    <th class="p-4 font-semibold">Language</th>
                                     <th class="p-4 font-semibold">Status</th>
                                     <th class="p-4 font-semibold">Actions</th>
                                 </tr>
@@ -321,7 +322,33 @@ const exportPdfBtn = document.getElementById('export-pdf-btn');
 // --- UI FUNCTIONS ---
 function updateStatus(text,colorClass){statusIndicator.textContent=text;statusIndicator.className=`text-xs px-3 py-1 rounded-full font-medium ${colorClass}`;}
 function updateButton(isRec){if(isRec){btn.textContent='Stop & Summarize Meeting';btn.classList.replace('bg-indigo-600','bg-red-600');btn.classList.replace('hover:bg-indigo-700','hover:bg-red-700');}else{btn.textContent='Start Real-Time Transcription';btn.classList.replace('bg-red-600','bg-indigo-600');btn.classList.replace('hover:bg-red-700','hover:bg-indigo-700');}btn.disabled=false;}
-function clearSummary(){summaryText.textContent='Summary will be generated once the recording stops and the full transcript is available.';summaryText.classList.add('italic','text-gray-500');actionItemsList.innerHTML='';}
+function clearSummary(){summaryText.textContent='Summary will be generated once the recording stops and the full transcript is available.';summaryText.classList.add('italic','text-gray-500');actionItemsList.innerHTML='';const badge=document.getElementById('live-lang-badge');if(badge)badge.remove();}
+
+function showLiveLanguageBadge(label, isMixed) {
+    // Remove any existing badge
+    const existing = document.getElementById('live-lang-badge');
+    if (existing) existing.remove();
+
+    const summaryArea = document.getElementById('summary-area');
+    const badge = document.createElement('div');
+    badge.id = 'live-lang-badge';
+    badge.className = 'flex items-center gap-2 mb-3 p-2 rounded-lg ' +
+        (isMixed ? 'bg-purple-900/40 border border-purple-500/40' : 'bg-indigo-900/40 border border-indigo-500/40');
+    badge.innerHTML = `
+        <svg class="w-4 h-4 ${isMixed ? 'text-purple-400' : 'text-indigo-400'} flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129"></path>
+        </svg>
+        <div>
+            <p class="text-xs font-semibold ${isMixed ? 'text-purple-300' : 'text-indigo-300'}">
+                ${isMixed ? '🔀 Mixed Language Detected' : '🌐 Language Detected'}
+            </p>
+            <p class="text-xs text-gray-300">${label}</p>
+        </div>
+    `;
+    summaryArea.insertBefore(badge, summaryArea.firstChild);
+}
+
 
 function getSpeakerClass(speaker) {
     // This function creates a simple color rotation for speakers
@@ -429,6 +456,7 @@ const statusClass =
     </td>
     <td class="p-4">${meetingDate.toLocaleDateString()}</td>
     <td class="p-4">${duration}</td>
+    <td class="p-4">${renderLanguageBadge(meeting.detected_language, meeting.detected_language_codes)}</td>
     <td class="p-4">
         <span class="text-xs font-medium px-2 py-1 rounded-full ${statusClass}">
             ${meeting.status}
@@ -538,7 +566,15 @@ async function toggleMicrophone(){
             if(data.type==='TRANSCRIPT_FINALIZED'){
                 // This message type is no longer used, summary comes in real-time
             }
+            if(data.type==='LANGUAGE_DETECTED'){
+                // Show detected language badge in the live view
+                showLiveLanguageBadge(data.label, data.is_mixed);
+            }
             if(data.type==='SUMMARY_COMPLETED'){
+                // Show language badge if included in summary payload
+                if (data.detected_language) {
+                    showLiveLanguageBadge(data.detected_language.label, data.detected_language.is_mixed);
+                }
                 summaryText.textContent=data.summaryData.summary;
                 summaryText.classList.remove('italic','text-gray-500');
                 actionItemsList.innerHTML='';
@@ -607,6 +643,22 @@ async function toggleMicrophone(){
 
 }
 
+// --- LANGUAGE BADGE HELPERS ---
+function renderLanguageBadge(label, codesJson) {
+    if (!label) return '<span class="text-xs text-gray-500">—</span>';
+
+    let codes = [];
+    try { codes = codesJson ? JSON.parse(codesJson) : []; } catch(e) {}
+    const isMixed = codes.length > 1;
+
+    const colorClass = isMixed
+        ? 'bg-purple-900/40 text-purple-300 border border-purple-500/40'
+        : 'bg-indigo-900/40 text-indigo-300 border border-indigo-500/40';
+    const icon = isMixed ? '🔀' : '🌐';
+
+    return `<span class="text-xs px-2 py-1 rounded-full font-medium ${colorClass}">${icon} ${label}</span>`;
+}
+
 // --- MODAL FUNCTIONS ---
 function viewMeetingDetails(event, meetingId) {
     event.stopPropagation(); // Stop row click from firing
@@ -619,8 +671,18 @@ function viewMeetingDetails(event, meetingId) {
     }
     // Populate Modal
     modalTitle.textContent = meeting.title;
-    
-    modalSummary.textContent = meeting.summary_text || 'Summary not available.';
+
+    // Show detected language badge below the title
+    const existingLangBadge = document.getElementById('modal-lang-badge');
+    if (existingLangBadge) existingLangBadge.remove();
+    if (meeting.detected_language) {
+        const langBadgeDiv = document.createElement('div');
+        langBadgeDiv.id = 'modal-lang-badge';
+        langBadgeDiv.className = 'mb-4';
+        langBadgeDiv.innerHTML = renderLanguageBadge(meeting.detected_language, meeting.detected_language_codes);
+        modalTitle.insertAdjacentElement('afterend', langBadgeDiv);
+    }
+
     originalSummary = modalSummary.textContent;
 
     modalSummary.classList.toggle('italic', !meeting.summary_text);
@@ -796,7 +858,13 @@ async function uploadFile() {
 
         const data = await resp.json();
 
-        status.textContent = "Upload complete. Summary generated.";
+        let langNote = '';
+        if (data.detected_language) {
+            const { label, is_mixed } = data.detected_language;
+            langNote = ` — ${is_mixed ? '🔀' : '🌐'} Detected: ${label}`;
+        }
+
+        status.textContent = `Upload complete. Summary generated.${langNote}`;
         loadMeetingHistory();
         switchView("dashboard-view");
 

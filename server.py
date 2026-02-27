@@ -144,38 +144,199 @@ def google_translate(text: str, target_lang: str):
 def chunk_text(text, chunk_size=3000):
     return [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
 
-async def generate_ai_summary(transcript: str):
+
+# Language code → full name mapping for prompts
+LANGUAGE_NAMES = {
+    "en": "English",
+    "hi": "Hindi",
+    "mr": "Marathi",
+    "es": "Spanish",
+    "fr": "French",
+    "de": "German",
+    "ar": "Arabic",
+    "zh": "Chinese",
+    "ta": "Tamil",
+    "te": "Telugu",
+    "gu": "Gujarati",
+    "pa": "Punjabi",
+    "bn": "Bengali",
+    "ur": "Urdu",
+}
+
+# Known mixed-language combos and how to label + prompt them
+MIXED_LANGUAGE_PROFILES = {
+    frozenset(["hi", "en"]): {
+        "label": "Hinglish (Hindi + English)",
+        "summary_instruction": "Write the summary in Hindi, but you may naturally include English technical terms where they were used. Use Devanagari script for Hindi portions."
+    },
+    frozenset(["mr", "hi"]): {
+        "label": "Marathi + Hindi",
+        "summary_instruction": "Write the summary in Marathi (Devanagari script). You may include Hindi words where the speaker naturally used them."
+    },
+    frozenset(["mr", "en"]): {
+        "label": "Marathi + English",
+        "summary_instruction": "Write the summary in Marathi (Devanagari script), naturally including English technical terms where appropriate."
+    },
+    frozenset(["mr", "hi", "en"]): {
+        "label": "Marathi + Hindi + English",
+        "summary_instruction": "Write the summary in Marathi (Devanagari script). Naturally include Hindi and English words where they were used in the meeting."
+    },
+    frozenset(["ta", "en"]): {
+        "label": "Tamil + English",
+        "summary_instruction": "Write the summary in Tamil script, including English technical terms naturally."
+    },
+    frozenset(["te", "en"]): {
+        "label": "Telugu + English",
+        "summary_instruction": "Write the summary in Telugu script, including English technical terms naturally."
+    },
+}
+
+
+async def detect_language(transcript: str) -> dict:
+    """
+    Detect the dominant language(s) in a transcript using the LLM.
+    Returns a dict with:
+      - detected_codes: list of ISO 639-1 codes (e.g. ["hi", "en"])
+      - label: human-readable label (e.g. "Hinglish (Hindi + English)")
+      - summary_instruction: how to write the summary
+      - is_mixed: bool
+    """
+    # Use just the first 1500 chars for speed
+    sample = transcript[:1500]
+
+    response = client.chat.completions.create(
+        model="llama-3.1-8b-instant",
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "You are a language detection expert. Analyze the given text and identify "
+                    "ALL languages present (including code-switching / mixed language). "
+                    "Respond ONLY with valid JSON. No markdown, no explanation."
+                )
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"Detect the language(s) in this transcript excerpt:\n\n{sample}\n\n"
+                    "Return JSON with these fields:\n"
+                    "- dominant_language: ISO 639-1 code of the most-used language (e.g. 'hi', 'en', 'mr')\n"
+                    "- all_languages: array of ISO 639-1 codes of ALL languages detected\n"
+                    "- confidence: 'high', 'medium', or 'low'\n\n"
+                    "Common codes: en=English, hi=Hindi, mr=Marathi, ur=Urdu, ta=Tamil, "
+                    "te=Telugu, gu=Gujarati, pa=Punjabi, bn=Bengali, es=Spanish, fr=French, de=German"
+                )
+            }
+        ],
+        temperature=0.1,
+        max_tokens=150,
+    )
+
+    content = response.choices[0].message.content.strip()
+    content = content.replace("```json", "").replace("```", "").strip()
+
+    try:
+        result = json.loads(content)
+    except Exception:
+        print(f"⚠️ Language detection parse failed: {content}")
+        return {
+            "detected_codes": ["en"],
+            "label": "English",
+            "summary_instruction": "Write the summary in English.",
+            "is_mixed": False,
+        }
+
+    dominant = result.get("dominant_language", "en").lower()
+    all_langs = [l.lower() for l in result.get("all_languages", [dominant])]
+    # Deduplicate and ensure dominant is included
+    all_langs = list(dict.fromkeys([dominant] + all_langs))
+
+    is_mixed = len(all_langs) > 1
+
+    # Check for a known mixed profile
+    lang_set = frozenset(all_langs)
+    mixed_profile = None
+    # Try exact match first, then subsets
+    for key in MIXED_LANGUAGE_PROFILES:
+        if key == lang_set or key.issubset(lang_set):
+            mixed_profile = MIXED_LANGUAGE_PROFILES[key]
+            break
+
+    if is_mixed and mixed_profile:
+        label = mixed_profile["label"]
+        summary_instruction = mixed_profile["summary_instruction"]
+    elif is_mixed:
+        # Generic mixed label
+        lang_names = [LANGUAGE_NAMES.get(l, l.upper()) for l in all_langs]
+        label = " + ".join(lang_names)
+        dominant_name = LANGUAGE_NAMES.get(dominant, dominant.upper())
+        summary_instruction = (
+            f"Write the summary primarily in {dominant_name}, "
+            "naturally incorporating words from the other languages where the speakers used them."
+        )
+    else:
+        lang_name = LANGUAGE_NAMES.get(dominant, dominant.upper())
+        label = lang_name
+        summary_instruction = f"Write the summary in {lang_name}."
+
+    print(f"🌐 Language detected: {label} (codes: {all_langs})")
+
+    return {
+        "detected_codes": all_langs,
+        "label": label,
+        "summary_instruction": summary_instruction,
+        "is_mixed": is_mixed,
+    }
+
+
+async def generate_ai_summary(transcript: str, language_info: dict = None):
+
+    # If no language info provided, detect it now
+    if language_info is None:
+        language_info = await detect_language(transcript)
+
+    summary_instruction = language_info.get(
+        "summary_instruction", "Write the summary in English."
+    )
+    detected_label = language_info.get("label", "English")
 
     chunks = chunk_text(transcript, 3000)
     partial_summaries = []
 
     # STEP 1: Summarize each chunk
     for chunk in chunks[:3]:  # limit to first 3 chunks for free tier safety
-        
         response = client.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=[
-                {"role": "system", "content": "You summarize meetings professionally."},
+                {
+                    "role": "system",
+                    "content": (
+                        f"You summarize meetings professionally. "
+                        f"The transcript may contain mixed languages. "
+                        f"{summary_instruction}"
+                    )
+                },
                 {"role": "user", "content": f"Summarize this meeting segment:\n\n{chunk}"}
             ],
             temperature=0.4,
         )
-
         partial_summaries.append(response.choices[0].message.content)
 
     combined_summary = "\n".join(partial_summaries)
 
     # STEP 2: Generate final structured summary + action items
     final_prompt = f"""
-You are a professional meeting analyst.
+You are a professional meeting analyst. The meeting was conducted in: {detected_label}.
+
+LANGUAGE INSTRUCTION: {summary_instruction}
 
 Using the notes below:
 
 {combined_summary}
 
 Create:
-1. A clear, human-readable summary in 2–3 paragraphs.
-2. 3-5 practical  action items.
+1. A clear, human-readable summary in 2–3 paragraphs. Follow the language instruction above strictly.
+2. 3-5 practical action items. Write action item text in the same language as the summary.
 
 Return ONLY valid JSON.
 Do NOT wrap in markdown.
@@ -184,9 +345,9 @@ Do NOT include ```json.
 Format:
 
 {{
-  "summary": "Plain readable paragraph summary only.",
+  "summary": "Paragraph summary in the correct language.",
   "action_items": [
-    {{"item": "Task description", "assigned_to": "Team"}}
+    {{"item": "Task description in correct language", "assigned_to": "Team"}}
   ]
 }}
 """
@@ -194,7 +355,7 @@ Format:
     final_response = client.chat.completions.create(
         model="llama-3.1-8b-instant",
         messages=[
-            {"role": "system", "content": "You generate structured summaries."},
+            {"role": "system", "content": "You generate structured meeting summaries following exact language instructions."},
             {"role": "user", "content": final_prompt}
         ],
         temperature=0.4,
@@ -261,7 +422,9 @@ CREATE TABLE IF NOT EXISTS meetings (
         summary_text TEXT,
         action_items TEXT,
         status TEXT NOT NULL,
-        progress INTEGER DEFAULT 0
+        progress INTEGER DEFAULT 0,
+        detected_language TEXT DEFAULT NULL,
+        detected_language_codes TEXT DEFAULT NULL
     );
     """)
 
@@ -272,6 +435,14 @@ CREATE TABLE IF NOT EXISTS meetings (
         translated_text TEXT,
         PRIMARY KEY (meeting_id, language)
     );
+    """)
+
+    # Migration: add language columns if they don't exist yet (safe to run repeatedly)
+    cursor.execute("""
+        ALTER TABLE meetings ADD COLUMN IF NOT EXISTS detected_language TEXT DEFAULT NULL;
+    """)
+    cursor.execute("""
+        ALTER TABLE meetings ADD COLUMN IF NOT EXISTS detected_language_codes TEXT DEFAULT NULL;
     """)
 
     conn.commit()
@@ -466,7 +637,8 @@ def get_meetings(user_id: int = Depends(get_current_user)):
     cursor.execute("""
         SELECT meeting_id, title, start_time, duration_seconds,
                full_transcript, summary_text, action_items,
-               status, progress
+               status, progress,
+               detected_language, detected_language_codes
         FROM meetings
         ORDER BY start_time DESC
     """)
@@ -551,15 +723,20 @@ async def upload_and_summarize(file: UploadFile = File(...)):
 
     # Cloud transcription only
     transcript, _, duration = await cloud_transcribe_and_summarize(path)
-    summary = await generate_ai_summary(transcript)
 
+    # Detect language from transcript
+    language_info = await detect_language(transcript)
+
+    summary = await generate_ai_summary(transcript, language_info)
 
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute(
         """
         UPDATE meetings
-        SET full_transcript = %s, summary_text = %s, action_items = %s, duration_seconds = %s, status = 'COMPLETED'
+        SET full_transcript = %s, summary_text = %s, action_items = %s,
+            duration_seconds = %s, status = 'COMPLETED',
+            detected_language = %s, detected_language_codes = %s
         WHERE meeting_id = %s
         """,
         (
@@ -567,6 +744,8 @@ async def upload_and_summarize(file: UploadFile = File(...)):
             summary.get("summary", ""),
             json.dumps(summary.get("action_items", [])),
             duration,
+            language_info["label"],
+            json.dumps(language_info["detected_codes"]),
             meeting_id,
         ),
     )
@@ -577,6 +756,7 @@ async def upload_and_summarize(file: UploadFile = File(...)):
         "meeting_id": meeting_id,
         "transcript": transcript,
         "summary": summary,
+        "detected_language": language_info,
     }
 
 
