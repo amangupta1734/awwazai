@@ -3,218 +3,277 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Awwazai - Login</title>
-
+    <title>Awwazai — Sign In</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'Inter', sans-serif; }
-        .login-container {
-            min-height: 100vh;
-            background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
-        }
-        .login-card {
-            background: rgba(31, 41, 55, 0.95);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(75, 85, 99, 0.5);
-        }
-        .input-field:focus {
-            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.3);
+        .tab-active { border-bottom: 2px solid #6366f1; color: #6366f1; }
+        .tab-inactive { border-bottom: 2px solid transparent; color: #9ca3af; }
+        input:-webkit-autofill {
+            -webkit-box-shadow: 0 0 0 30px #1f2937 inset !important;
+            -webkit-text-fill-color: #f9fafb !important;
         }
     </style>
-<script src="https://sites.super.myninja.ai/_assets/ninja-daytona-script.js"></script>
 </head>
-<body class="login-container flex items-center justify-center p-4">
+<body class="bg-gray-900 min-h-screen flex items-center justify-center p-4">
 
-<div class="login-card w-full max-w-md rounded-2xl shadow-2xl p-8">
-    <!-- Logo and Title -->
-    <div class="text-center mb-8">
-        <div class="flex items-center justify-center mb-4">
-            <svg class="w-12 h-12 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                      d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path>
-            </svg>
-        </div>
-        <h1 class="text-3xl font-bold text-white mb-2">Welcome Back</h1>
-        <p class="text-gray-400">Sign in to your Awwazai account</p>
+<div class="w-full max-w-md">
+
+    <!-- Logo -->
+    <div class="flex items-center justify-center mb-8">
+        <svg class="w-10 h-10 mr-3 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/>
+        </svg>
+        <h1 class="text-3xl font-bold text-white">Awwazai</h1>
     </div>
 
-    <!-- Login Form -->
-    <form id="login-form" class="space-y-6">
-        <!-- Email Field -->
-        <div>
-            <label for="email" class="block text-sm font-medium text-gray-300 mb-2">Email Address</label>
-            <input 
-                type="email" 
-                id="email" 
-                name="email" 
-                required
-                class="input-field w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-indigo-500 transition duration-200"
-                placeholder="you@example.com">
+    <p class="text-center text-gray-400 mb-8 text-sm">AI-powered meeting transcription & summarization</p>
+
+    <!-- Card -->
+    <div class="bg-gray-800 rounded-2xl shadow-2xl border border-gray-700 overflow-hidden">
+
+        <!-- Tabs -->
+        <div class="flex border-b border-gray-700">
+            <button id="tab-login" onclick="switchTab('login')"
+                class="flex-1 py-4 text-sm font-semibold tab-active transition-colors">
+                Sign In
+            </button>
+            <button id="tab-register" onclick="switchTab('register')"
+                class="flex-1 py-4 text-sm font-semibold tab-inactive transition-colors">
+                Create Account
+            </button>
         </div>
 
-        <!-- Password Field -->
-        <div>
-            <label for="password" class="block text-sm font-medium text-gray-300 mb-2">Password</label>
-            <div class="relative">
-                <input 
-                    type="password" 
-                    id="password" 
-                    name="password" 
-                    required
-                    class="input-field w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-indigo-500 transition duration-200"
-                    placeholder="••••••••">
-                <button 
-                    type="button" 
-                    onclick="togglePassword()"
-                    class="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white transition">
-                    <svg id="eye-icon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
-                    </svg>
-                </button>
+        <!-- Login Form -->
+        <div id="form-login" class="p-8">
+            <h2 class="text-xl font-bold text-white mb-6">Welcome back</h2>
+
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-1">Email</label>
+                    <input id="login-email" type="email" placeholder="you@example.com"
+                        class="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:border-indigo-500 transition"/>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-1">Password</label>
+                    <input id="login-password" type="password" placeholder="••••••••"
+                        class="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:border-indigo-500 transition"
+                        onkeydown="if(event.key==='Enter') doLogin()"/>
+                </div>
+                <div class="flex items-center gap-2">
+                    <input id="login-remember" type="checkbox" class="accent-indigo-500 w-4 h-4"/>
+                    <label for="login-remember" class="text-sm text-gray-400">Remember me</label>
+                </div>
             </div>
+
+            <p id="login-error" class="mt-3 text-red-400 text-sm hidden"></p>
+
+            <button onclick="doLogin()" id="login-btn"
+                class="w-full mt-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg transition">
+                Sign In
+            </button>
+
+            <p class="mt-4 text-center text-sm text-gray-400">
+                Don't have an account?
+                <button onclick="switchTab('register')" class="text-indigo-400 hover:text-indigo-300 font-medium">Create one</button>
+            </p>
         </div>
 
-        <!-- Remember Me & Forgot Password -->
-        <div class="flex items-center justify-between">
-            <label class="flex items-center cursor-pointer">
-                <input type="checkbox" id="remember" class="w-4 h-4 text-indigo-600 bg-gray-700 border-gray-600 rounded focus:ring-indigo-500">
-                <span class="ml-2 text-sm text-gray-400">Remember me</span>
-            </label>
-            <a href="#" class="text-sm text-indigo-400 hover:text-indigo-300 transition">Forgot password?</a>
+        <!-- Register Form -->
+        <div id="form-register" class="p-8 hidden">
+            <h2 class="text-xl font-bold text-white mb-6">Create your account</h2>
+
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-1">Full Name</label>
+                    <input id="reg-name" type="text" placeholder="Aman Sharma"
+                        class="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:border-indigo-500 transition"/>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-1">Email</label>
+                    <input id="reg-email" type="email" placeholder="you@example.com"
+                        class="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:border-indigo-500 transition"/>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-1">Password</label>
+                    <input id="reg-password" type="password" placeholder="Min. 6 characters"
+                        class="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:border-indigo-500 transition"/>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-1">Confirm Password</label>
+                    <input id="reg-confirm" type="password" placeholder="••••••••"
+                        class="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:border-indigo-500 transition"
+                        onkeydown="if(event.key==='Enter') doRegister()"/>
+                </div>
+            </div>
+
+            <p id="reg-error" class="mt-3 text-red-400 text-sm hidden"></p>
+            <p id="reg-success" class="mt-3 text-green-400 text-sm hidden"></p>
+
+            <button onclick="doRegister()" id="register-btn"
+                class="w-full mt-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg transition">
+                Create Account
+            </button>
+
+            <p class="mt-4 text-center text-sm text-gray-400">
+                Already have an account?
+                <button onclick="switchTab('login')" class="text-indigo-400 hover:text-indigo-300 font-medium">Sign in</button>
+            </p>
         </div>
 
-        <!-- Login Button -->
-        <button 
-            type="submit" 
-            id="login-btn"
-            class="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg shadow-lg transform transition hover:scale-[1.02] active:scale-[0.98] duration-200">
-            Sign In
-        </button>
-    </form>
-
-    <!-- Error Message -->
-    <div id="error-message" class="hidden mt-4 p-3 bg-red-500/20 border border-red-500/50 rounded-lg">
-        <p id="error-text" class="text-red-400 text-sm text-center"></p>
     </div>
 
-    <!-- Loading State -->
-    <div id="loading-state" class="hidden mt-4 text-center">
-        <div class="inline-block animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-indigo-500"></div>
-        <p class="text-gray-400 text-sm mt-2">Signing in...</p>
-    </div>
-
-    <!-- Sign Up Link -->
-    <div class="mt-6 text-center">
-        <p class="text-gray-400 text-sm">
-            Don't have an account? 
-            <a href="#" class="text-indigo-400 hover:text-indigo-300 font-medium transition">Sign up</a>
-        </p>
-    </div>
-
-    <!-- Footer -->
-    <div class="mt-8 pt-6 border-t border-gray-700">
-        <p class="text-center text-gray-500 text-xs">
-            © 2024 Awwazai. All rights reserved.
-        </p>
-    </div>
+    <p class="text-center text-xs text-gray-600 mt-6">© 2026 Awwazai · Final Year Project</p>
 </div>
 
 <script>
-// Toggle password visibility
-function togglePassword() {
-    const passwordInput = document.getElementById('password');
-    const eyeIcon = document.getElementById('eye-icon');
-    
-    if (passwordInput.type === 'password') {
-        passwordInput.type = 'text';
-        eyeIcon.innerHTML = `
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"></path>
-        `;
-    } else {
-        passwordInput.type = 'password';
-        eyeIcon.innerHTML = `
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
-        `;
-    }
-}
+    const API_BASE_URL = window.location.origin;
 
-// Handle login form submission
-document.getElementById('login-form').addEventListener('submit', async function(e) {
-    e.preventDefault();
-    
-    const email = document.getElementById('email').value;
-    const password = document.getElementById('password').value;
-    const remember = document.getElementById('remember').checked;
-    const loginBtn = document.getElementById('login-btn');
-    const errorDiv = document.getElementById('error-message');
-    const errorText = document.getElementById('error-text');
-    const loadingState = document.getElementById('loading-state');
-    
-    // Hide any previous error
-    errorDiv.classList.add('hidden');
-    
-    // Show loading state
-    loadingState.classList.remove('hidden');
-    loginBtn.disabled = true;
-    loginBtn.classList.add('opacity-50', 'cursor-not-allowed');
-    
-    try {
-        // Send login request to backend
-        const response = await fetch('/api/login', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                email: email,
-                password: password,
-                remember: remember
-            })
-        });
-        
-        const data = await response.json();
-        
-        if (response.ok) {
-            // Store token in localStorage or sessionStorage
-            if (remember) {
-                localStorage.setItem('auth_token', data.token);
-                localStorage.setItem('user_email', email);
-            } else {
-                sessionStorage.setItem('auth_token', data.token);
-                sessionStorage.setItem('user_email', email);
-            }
-            
-            // Redirect to dashboard
-            window.location.href = '/';
-        } else {
-            // Show error message
-            errorText.textContent = data.message || 'Login failed. Please try again.';
-            errorDiv.classList.remove('hidden');
+    // If already logged in, redirect to dashboard
+    const existingToken = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+    if (existingToken) window.location.href = '/';
+
+    function switchTab(tab) {
+        const isLogin = tab === 'login';
+
+        document.getElementById('form-login').classList.toggle('hidden', !isLogin);
+        document.getElementById('form-register').classList.toggle('hidden', isLogin);
+
+        document.getElementById('tab-login').className = `flex-1 py-4 text-sm font-semibold transition-colors ${isLogin ? 'tab-active' : 'tab-inactive'}`;
+        document.getElementById('tab-register').className = `flex-1 py-4 text-sm font-semibold transition-colors ${!isLogin ? 'tab-active' : 'tab-inactive'}`;
+
+        // Clear errors
+        document.getElementById('login-error').classList.add('hidden');
+        document.getElementById('reg-error').classList.add('hidden');
+        document.getElementById('reg-success').classList.add('hidden');
+    }
+
+    function showError(id, msg) {
+        const el = document.getElementById(id);
+        el.textContent = msg;
+        el.classList.remove('hidden');
+    }
+
+    function setLoading(btnId, loading, defaultText) {
+        const btn = document.getElementById(btnId);
+        btn.disabled = loading;
+        btn.textContent = loading ? 'Please wait...' : defaultText;
+        btn.classList.toggle('opacity-60', loading);
+    }
+
+    async function doLogin() {
+        const email = document.getElementById('login-email').value.trim();
+        const password = document.getElementById('login-password').value;
+        const remember = document.getElementById('login-remember').checked;
+
+        document.getElementById('login-error').classList.add('hidden');
+
+        if (!email || !password) {
+            showError('login-error', 'Please enter your email and password.');
+            return;
         }
-    } catch (error) {
-        console.error('Login error:', error);
-        errorText.textContent = 'Network error. Please check your connection and try again.';
-        errorDiv.classList.remove('hidden');
-    } finally {
-        // Hide loading state
-        loadingState.classList.add('hidden');
-        loginBtn.disabled = false;
-        loginBtn.classList.remove('opacity-50', 'cursor-not-allowed');
-    }
-});
 
-// Check if user is already logged in
-document.addEventListener('DOMContentLoaded', function() {
-    const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
-    if (token) {
-        // User is logged in, redirect to dashboard
-        window.location.href = '/';
+        setLoading('login-btn', true, 'Sign In');
+
+        try {
+            const resp = await fetch(`${API_BASE_URL}/api/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password, remember })
+            });
+
+            const data = await resp.json();
+
+            if (!resp.ok) {
+                showError('login-error', data.detail || 'Invalid email or password.');
+                return;
+            }
+
+            // Store token
+            const storage = remember ? localStorage : sessionStorage;
+            storage.setItem('auth_token', data.token);
+            storage.setItem('user_email', email);
+            storage.setItem('user_name', data.name || email);
+
+            window.location.href = '/';
+
+        } catch (err) {
+            showError('login-error', 'Cannot connect to server. Please try again.');
+        } finally {
+            setLoading('login-btn', false, 'Sign In');
+        }
     }
-});
+
+    async function doRegister() {
+        const name = document.getElementById('reg-name').value.trim();
+        const email = document.getElementById('reg-email').value.trim();
+        const password = document.getElementById('reg-password').value;
+        const confirm = document.getElementById('reg-confirm').value;
+
+        document.getElementById('reg-error').classList.add('hidden');
+        document.getElementById('reg-success').classList.add('hidden');
+
+        if (!name || !email || !password || !confirm) {
+            showError('reg-error', 'Please fill in all fields.');
+            return;
+        }
+        if (password.length < 6) {
+            showError('reg-error', 'Password must be at least 6 characters.');
+            return;
+        }
+        if (password !== confirm) {
+            showError('reg-error', 'Passwords do not match.');
+            return;
+        }
+
+        setLoading('register-btn', true, 'Create Account');
+
+        try {
+            const resp = await fetch(`${API_BASE_URL}/api/register`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, email, password })
+            });
+
+            const data = await resp.json();
+
+            if (!resp.ok) {
+                showError('reg-error', data.detail || 'Registration failed. Please try again.');
+                return;
+            }
+
+            // Show success then auto-login
+            const successEl = document.getElementById('reg-success');
+            successEl.textContent = '✅ Account created! Signing you in...';
+            successEl.classList.remove('hidden');
+
+            // Auto-login after registration
+            setTimeout(async () => {
+                const loginResp = await fetch(`${API_BASE_URL}/api/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password, remember: false })
+                });
+                const loginData = await loginResp.json();
+                if (loginResp.ok) {
+                    sessionStorage.setItem('auth_token', loginData.token);
+                    sessionStorage.setItem('user_email', email);
+                    sessionStorage.setItem('user_name', name);
+                    window.location.href = '/';
+                } else {
+                    switchTab('login');
+                    document.getElementById('login-email').value = email;
+                }
+            }, 1000);
+
+        } catch (err) {
+            showError('reg-error', 'Cannot connect to server. Please try again.');
+        } finally {
+            setLoading('register-btn', false, 'Create Account');
+        }
+    }
 </script>
 
 </body>
